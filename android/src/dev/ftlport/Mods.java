@@ -17,6 +17,12 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -385,6 +391,8 @@ final class Mods {
         long free = Importer.gameDir(ctx).getUsableSpace();
         if (free < need)
             throw new IOException(ctx.getString(R.string.mods_no_space, (need - free + (1 << 20) - 1) >> 20));
+        List<String> notes = new ArrayList<>();
+        for (Mod m : on) fixTextEncoding(new File(dir(ctx), m.file), m.file, notes);
 
         boolean swapped = false;
         try {
@@ -397,7 +405,7 @@ final class Mods {
             if (!stage.mkdirs()) throw new IOException("Couldn't create " + stage);
             // ftlman patches <dir>/ftl.dat, starting from <dir>/ftl.dat.vanilla.
             android.system.Os.symlink(vanilla.getPath(), new File(stage, "ftl.dat.vanilla").getPath());
-            runFtlman(ctx, stage, on, progress);
+            runFtlman(ctx, stage, on, progress, notes);
             File patched = new File(stage, "ftl.dat");
             writeOverlay(ctx, patched, on);
             if (!patched.renameTo(dat(ctx))) throw new IOException("Couldn't install the patched ftl.dat");
@@ -427,9 +435,89 @@ final class Mods {
         }
     }
 
+    // Text files in mods are read by ftlman as UTF-8 (or UTF-16 with a byte order
+    // mark). Slipstream reads files that aren't UTF-8 as Windows-1252, and some
+    // older mods were saved that way, so convert them the first time they're
+    // applied: valid UTF-8 stays as it is, other bytes are read as Windows-1252.
+    private static void fixTextEncoding(File mod, String name, List<String> notes) throws IOException {
+        List<String> bad = new ArrayList<>();
+        try (ZipFile z = new ZipFile(mod)) {
+            for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+                ZipEntry e = en.nextElement();
+                if (!e.isDirectory() && isText(e.getName())) {
+                    try (InputStream in = z.getInputStream(e)) {
+                        if (toUtf8(readAll(in)) != null) bad.add(e.getName());
+                    }
+                }
+            }
+            if (bad.isEmpty()) return;
+            File tmp = new File(mod.getPath() + ".tmp");
+            byte[] buf = new byte[1 << 16];
+            try (ZipOutputStream zo = new ZipOutputStream(new FileOutputStream(tmp))) {
+                for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+                    ZipEntry e = en.nextElement();
+                    zo.putNextEntry(new ZipEntry(e.getName()));
+                    try (InputStream in = z.getInputStream(e)) {
+                        if (bad.contains(e.getName())) {
+                            zo.write(toUtf8(readAll(in)));
+                        } else {
+                            for (int n; (n = in.read(buf)) > 0; ) zo.write(buf, 0, n);
+                        }
+                    }
+                    zo.closeEntry();
+                }
+            }
+            if (!tmp.renameTo(mod)) throw new IOException("Couldn't update " + name);
+        }
+        for (String b : bad) notes.add(name + ": " + b + " converted to UTF-8 (it was Windows-1252)");
+    }
+
+    private static boolean isText(String path) {
+        String n = path.toLowerCase(Locale.ROOT);
+        for (String ext : new String[] {".xml", ".txt", ".append", ".rawappend", ".rawclobber", ".lua"})
+            if (n.endsWith(ext)) return true;
+        return false;
+    }
+
+    /** The text as UTF-8, or null if it already is (or is UTF-16 with a byte order mark). */
+    static byte[] toUtf8(byte[] b) {
+        int b0 = b.length > 0 ? b[0] & 0xff : -1, b1 = b.length > 1 ? b[1] & 0xff : -1;
+        if ((b0 == 0xff && b1 == 0xfe) || (b0 == 0xfe && b1 == 0xff)) return null;
+        CharsetDecoder utf8 = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT);
+        Charset cp1252 = Charset.forName("windows-1252");
+        ByteBuffer in = ByteBuffer.wrap(b);
+        CharBuffer out = CharBuffer.allocate(b.length);  // never more characters than bytes
+        boolean changed = false;
+        for (;;) {
+            CoderResult r = utf8.decode(in, out, true);
+            if (r.isUnderflow()) break;
+            if (!r.isError()) throw new IllegalStateException(r.toString());
+            byte[] odd = new byte[r.length()];
+            in.get(odd);
+            out.put(new String(odd, cp1252));
+            changed = true;
+        }
+        if (!changed) return null;
+        utf8.flush(out);
+        out.flip();
+        ByteBuffer enc = StandardCharsets.UTF_8.encode(out);
+        byte[] res = new byte[enc.remaining()];
+        enc.get(res);
+        return res;
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        byte[] buf = new byte[1 << 16];
+        for (int n; (n = in.read(buf)) > 0; ) bo.write(buf, 0, n);
+        return bo.toByteArray();
+    }
+
     // Its warnings (often leftovers that mods carry for older versions of FTL)
     // only go to the log, as with ftlman on PC.
-    private static void runFtlman(Context ctx, File dataDir, List<Mod> on, Progress progress) throws IOException {
+    private static void runFtlman(Context ctx, File dataDir, List<Mod> on, Progress progress, List<String> notes)
+            throws IOException {
         File exe = new File(ctx.getApplicationInfo().nativeLibraryDir, "libftlman.so");
         List<String> cmd = new ArrayList<>(Arrays.asList(exe.getPath(), "patch", "--data-dir", dataDir.getPath()));
         for (Mod m : on) cmd.add(new File(dir(ctx), m.file).getPath());
@@ -455,6 +543,7 @@ final class Mods {
         log.getParentFile().mkdirs();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
              Writer w = new OutputStreamWriter(new FileOutputStream(log), StandardCharsets.UTF_8)) {
+            for (String n : notes) w.write(n + "\n");
             w.write(String.join(" ", cmd) + "\n");
             for (String line; (line = r.readLine()) != null; ) {
                 line = line.replaceAll("\u001b\\[[0-9;]*m", "").trim();  // no colours, just in case
