@@ -57,7 +57,8 @@ app imports them when it starts:
 ### Updating
 
 Install the newer APK over the old one. Your imported game files and saves are
-kept. Uninstalling the app deletes both, saves included.
+kept. Uninstalling the app deletes both, saves included, so export your saves
+first (see below) if you need to uninstall.
 
 An APK you build yourself is signed with your own key, so Android won't install
 a release over it (or the other way round) without uninstalling first.
@@ -68,8 +69,10 @@ a release over it (or the other way round) without uninstalling first.
   version as downloaded, and it can't run outside iOS.
 - "This file doesn't look like FTL for iPad": the file you picked doesn't
   contain the `FTL` and `ftl.dat` files from `FTL.app`.
-- Crashes or a black screen: please open an issue with your phone model and the
-  output of `adb logcat -s FTLPort`.
+- Crashes or a black screen: in settings, tap **Save logs…** and attach the
+  zip to an issue. It has the last few sessions' logs, including what happened
+  in a crash, and your phone model. After a crash the app offers this itself the
+  next time it starts. `adb logcat -s FTLPort` shows the same log live.
 
 ## Playing on a phone
 
@@ -84,11 +87,16 @@ everything about half its iPad size, so there are a few additions:
 | Two-finger tap | Pause and resume. |
 | Back | Closes the open window or opens the game menu. On the title screen it asks whether to quit; the game saves first. |
 
+Events, the beacon map and the upgrade and cargo screens fill the screen while
+they're open, so their text is readable without pinching. The view goes back
+when they close. Doors work as on the iPad: tap the door button in the
+bottom-left corner, then tap or drag across doors to open and close them.
+
 The iOS build has no keyboard shortcuts of its own, so desktop-style ones are
 added and switch on the first time you press a key: Space pauses, 1-8 power
 weapons and drones (Shift removes power), the letter keys power systems, J
-jumps, U/C/I open upgrades, crew and cargo, Z/X open or close all doors, V
-toggles autofire, Esc opens the menu.
+jumps, U/C/I open upgrades, crew and cargo, Z/X open or close all doors (any
+time, not only in door mode), V toggles autofire, Esc opens the menu.
 
 A mouse works too: the left button acts as a finger, the right button is Back,
 and the wheel zooms.
@@ -99,11 +107,49 @@ drags at the cursor, B is Back, X pauses, LB/RB zoom, the right stick pans
 while zoomed in, holding LT shows the magnifier, Start opens the menu and
 Select resets the zoom.
 
-Long-press the app icon for settings: magnifier (automatic on phone-sized
-screens, always or off), two-finger pause, minimap, render resolution, and
-re-importing the game files.
+Long-press the app icon for settings (they're also behind Settings on the quit
+prompt). There you can set the magnifier (automatic on phone-sized screens,
+always or off), two-finger pause, the minimap, vibration, zooming in on
+windows, event text size, continuing the run at launch and render resolution,
+and manage saves, mods, logs and the imported game files.
 
-The game saves whenever you switch away from it, like on iOS.
+The game saves whenever you switch away from it, like on iOS. Android often
+closes apps in the background, so when you open FTL again it goes straight
+back to your run instead of the title screen.
+
+## Saves
+
+Settings has **Export saves…**, which makes a zip of your run, your profile
+(unlocks, achievements, scores) and the game's settings, and **Import
+saves…**, which takes such a zip or the files on their own (`continue.sav`,
+`prof.sav`, `settings.ini`). Use them to keep a backup or to move to another
+phone. Importing backs up what it replaces first, and **Undo last import** puts
+it back.
+
+## Mods
+
+Mods made for FTL 1.6 on PC work too: the `.ftl` or `.zip` files the
+[Slipstream mod manager](https://github.com/Vhati/Slipstream-Mod-Manager) uses.
+In settings, open **Mods…**, add the files, tick the ones you want and put them
+in order, then **Apply and restart**. **Turn off mods** goes back to the plain
+game without removing them.
+
+What's supported:
+
+- `.xml.append` files with Slipstream's advanced XML (`mod:findName`,
+  `mod:findLike`, `mod:findWithChildLike`, `mod:findComposite`,
+  `mod:setAttributes`, `mod:removeAttributes`, `mod:setValue`, `mod:removeTag`,
+  `mod-append:`, `mod-prepend:`, `mod-overwrite:`), plus `.xml.rawappend` and
+  `.xml.rawclobber`.
+- Replacement and new files under `data/`, `img/`, `audio/` and `fonts/`. PNG
+  images are converted to the texture format the iPad build uses, and taken out
+  of the iPad's texture atlases when a mod replaces one.
+
+Mods that need Hyperspace, such as Multiverse, can't work: they change the PC
+game's code, not its data. XSLT patches aren't supported either. The iPad build
+has a few data files of its own, so a mod that replaces a whole file instead of
+appending to it can occasionally clash. If a mod makes the game crash, the app
+offers to turn mods off the next time it starts.
 
 ## Building from source
 
@@ -139,7 +185,7 @@ Two optional build variables:
 GameActivity.java    SurfaceView, input, dialogs, lifecycle
   | JNI
 plat_android.c       EGL surface hand-off, event queue, AAudio
-ux/                  layout, zoom, gestures, magnifier, minimap, hotkeys
+ux/                  layout, zoom, gestures, magnifier, minimap, hotkeys, mods
 fw/                  UIKit, Foundation, QuartzCore/EAGL, AudioUnit, GameKit stubs;
                      EAGL maps onto GLES 3 (the game renders to an FBO that gets
                      blitted to the window), BGRA swizzling, PVRTC decoded on the CPU
@@ -153,8 +199,11 @@ ratio. It lays out a canvas 768 units tall and as wide as the screen, rendered
 at 1536 pixels tall on most phones so text stays sharp when scaled or zoomed.
 
 A few features hook specific addresses in the 1.6.21 binary (the logger, the
-pause action, hotkey lookup and menu state). They're only enabled when the
-binary's LC_UUID matches that build.
+pause action, hotkey lookup, menu and window state, and the ftl.dat reader for
+mods). They're only enabled when the binary's LC_UUID matches that build.
+
+Mods are merged by the app into one overlay file, and the game's ftl.dat reader
+is hooked to look there first, so `ftl.dat` itself is never changed.
 
 ## Testing
 

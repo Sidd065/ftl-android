@@ -17,6 +17,7 @@ import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.DisplayCutout;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -38,7 +39,7 @@ import android.widget.TextView;
 import java.io.File;
 
 public class GameActivity extends Activity implements SurfaceHolder.Callback {
-    private static final int REQ_ARCHIVE = 1, REQ_TREE = 2;
+    private static final int REQ_ARCHIVE = 1, REQ_TREE = 2, REQ_LOGS = 3;
     private static boolean sNativeStarted;  // the game runs once per process
 
     private SurfaceView mSurface;
@@ -49,8 +50,8 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     private final Handler mMain = new Handler(Looper.getMainLooper());
 
     // ---- native ----
-    private native void nativeStart(String bin, String bundle, String docs, String cache, int sw, int sh, int refresh,
-                                    float[] layout);
+    private native void nativeStart(String bin, String bundle, String docs, String cache, String logs, String mods,
+                                    int sw, int sh, int refresh, float[] layout);
     private native void nativeAttach();
     private native void nativeSurfaceChanged(Surface s, int w, int h);
     private native void nativeSurfaceDestroyed();
@@ -72,6 +73,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Logs.installCrashHandler(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -155,7 +157,8 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         super.onActivityResult(req, res, data);
         if (res != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
-        runImport(req == REQ_TREE, uri);
+        if (req == REQ_LOGS) saveLogs(uri);
+        else runImport(req == REQ_TREE, uri);
     }
 
     private void tryAutoImportThenShowImporter() {
@@ -320,6 +323,9 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         nativeSetOption("magnifier", prefs.getInt(SettingsActivity.K_MAGNIFIER, 0));
         nativeSetOption("two_finger_pause", prefs.getBoolean(SettingsActivity.K_TWO_FINGER, true) ? 1 : 0);
         nativeSetOption("minimap", prefs.getBoolean(SettingsActivity.K_MINIMAP, true) ? 1 : 0);
+        nativeSetOption("haptics", prefs.getBoolean(SettingsActivity.K_HAPTICS, true) ? 1 : 0);
+        nativeSetOption("event_text", prefs.getInt(SettingsActivity.K_EVENT_TEXT, 0));
+        nativeSetOption("window_zoom", prefs.getInt(SettingsActivity.K_WINDOW_ZOOM, 0));
     }
 
     private int refreshRate() {
@@ -338,16 +344,24 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             if (w < h) return;
             sNativeStarted = true;
             File game = Importer.gameDir(this);
-            File docs = new File(getFilesDir(), "Documents");
+            File docs = SaveTransfer.docsDir(this);
             File cache = new File(getCacheDir(), "ftl");
+            File logs = Logs.dir(this);
             //noinspection ResultOfMethodCallIgnored
             docs.mkdirs();
             //noinspection ResultOfMethodCallIgnored
             cache.mkdirs();
-            nativeStart(new File(game, "FTL").getPath(), game.getPath(), docs.getPath(), cache.getPath(), w, h,
-                    refreshRate(), computeLayout(w, h));
+            boolean crashed = Logs.crashedLastTime(this);
+            Logs.clearCrashFlag(this);
+            File mods = Mods.activeIndex(this);
+            nativeStart(new File(game, "FTL").getPath(), game.getPath(), docs.getPath(), cache.getPath(),
+                    logs.getPath(), mods != null ? mods.getPath() : "", w, h, refreshRate(), computeLayout(w, h));
             pushOptions();
+            // After a crash, start at the title screen in case the saved run is what crashed.
+            SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
+            nativeSetOption("resume_run", !crashed && prefs.getBoolean(SettingsActivity.K_RESUME, true) ? 1 : 0);
             scanPads();
+            if (crashed) mMain.postDelayed(this::offerCrashLogs, 1500);
         }
         // The game runs at 60 fps; let 90/120 Hz panels drop to 60 Hz while it's on screen.
         if (Build.VERSION.SDK_INT >= 30) {
@@ -654,6 +668,8 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
                     .setTitle(R.string.quit_title)
                     .setPositiveButton(R.string.quit_yes, (d, w) -> nativeQuit())
                     .setNegativeButton(android.R.string.cancel, null)
+                    .setNeutralButton(R.string.settings_short,
+                            (d, w) -> startActivity(new Intent(this, SettingsActivity.class)))
                     .setOnDismissListener(d -> {
                         mQuitDialog = null;
                         enterImmersive();
@@ -661,6 +677,59 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
                     .create();
             showDialog(mQuitDialog);
         });
+    }
+
+    // Light feedback for port gestures: 1 the magnifier appeared, 2 a two-finger tap paused or resumed.
+    @SuppressWarnings("unused")
+    void haptic(int kind) {
+        mMain.post(() -> {
+            if (mSurface == null) return;
+            int fx = kind == 1 ? HapticFeedbackConstants.LONG_PRESS
+                    : Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
+            mSurface.performHapticFeedback(fx);
+        });
+    }
+
+    // The game crashed last time: say so once, and offer the log.
+    private void offerCrashLogs() {
+        if (isFinishing()) return;
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(R.string.crash_title)
+                .setMessage(R.string.crash_body)
+                .setPositiveButton(R.string.set_save_logs, (dlg, w) -> {
+                    Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("application/zip");
+                    i.putExtra(Intent.EXTRA_TITLE, Logs.exportName());
+                    startActivityForResult(i, REQ_LOGS);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .setOnDismissListener(dlg -> enterImmersive());
+        // A mod is a likely cause: offer to play without.
+        if (Mods.activeIndex(this) != null)
+            b.setNeutralButton(R.string.crash_mods, (dlg, w) -> {
+                Mods.turnOff(this);
+                Intent i = new Intent(this, GameActivity.class);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(i);
+                finishAffinity();
+                android.os.Process.killProcess(android.os.Process.myPid());
+            });
+        showDialog(b.create());
+    }
+
+    private void saveLogs(Uri uri) {
+        new Thread(() -> {
+            String err = null;
+            try {
+                Logs.exportTo(this, uri);
+            } catch (Exception e) {
+                err = e.getMessage();
+            }
+            final String ferr = err;
+            mMain.post(() -> android.widget.Toast.makeText(this, ferr == null ? getString(R.string.logs_saved) : ferr,
+                    android.widget.Toast.LENGTH_SHORT).show());
+        }, "logs").start();
     }
 
     // The game saved and called exit(): close the task, then end the process

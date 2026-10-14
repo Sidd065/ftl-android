@@ -120,7 +120,7 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static float g_mm_x, g_mm_y, g_mm_w, g_mm_h;  // minimap rect (surface px), 0 when hidden
 static double g_flash_t;
 static int g_flash_icon;
-static bool g_minimap_on = true;
+static bool g_minimap_on = true, g_minimap_hidden;
 static bool g_cursor_on;
 static float g_cursor_x, g_cursor_y;
 // magnifier
@@ -141,6 +141,11 @@ bool overlay_minimap_hit(float sx, float sy) {
 void overlay_minimap_enable(bool on) {
     pthread_mutex_lock(&g_lock);
     g_minimap_on = on;
+    pthread_mutex_unlock(&g_lock);
+}
+void overlay_minimap_hide(bool hide) {
+    pthread_mutex_lock(&g_lock);
+    g_minimap_hidden = hide;
     pthread_mutex_unlock(&g_lock);
 }
 void overlay_loupe_enable(bool on) {
@@ -186,7 +191,8 @@ void overlay_draw(int sw, int sh, unsigned game_fbo, int gw, int gh) {
     double ft, lt;
     int ficon;
     float lx, ly, cx_, cy_;
-    bool show_loupe, show_cursor;
+    bool show_loupe, show_cursor, forced;
+    static bool loupe_was_shown;
     pthread_mutex_lock(&g_lock);
     double now = now_s();
     ft = now - g_flash_t;
@@ -197,11 +203,14 @@ void overlay_draw(int sw, int sh, unsigned game_fbo, int gw, int gh) {
     show_loupe = (g_loupe_on || g_lp_force) && g_lp_down && (lt >= LOUPE_DELAY || g_lp_moved) &&
                  zoom < LOUPE_MAG * 0.9;
     if (g_lp_moved && lt < LOUPE_DELAY) lt = LOUPE_DELAY;
+    forced = g_lp_force;
     show_cursor = g_cursor_on;
     cx_ = g_cursor_x;
     cy_ = g_cursor_y;
     pthread_mutex_unlock(&g_lock);
-    bool show_mm = zoom > 1.01 && g_minimap_on;
+    if (show_loupe && !loupe_was_shown && !forced) ux_haptic(1);  // held long enough: the magnifier is up
+    loupe_was_shown = show_loupe;
+    bool show_mm = zoom > 1.01 && g_minimap_on && !g_minimap_hidden;
     bool show_flash = ficon && ft < 0.6;
     if (!show_mm && !show_flash && !show_loupe && !show_cursor) {
         pthread_mutex_lock(&g_lock);

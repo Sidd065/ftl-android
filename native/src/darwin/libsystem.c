@@ -574,7 +574,7 @@ int darwin_pthread_create(pthread_t *th, const d_attr_t *a, void *(*fn)(void *),
     ts->arg = arg;
     int r = pthread_create(th, &ha, thread_trampoline, ts);
     pthread_attr_destroy(&ha);
-    LOGI("pthread_create(fn=%p) = %d", (void *)fn, r);
+    LOGV("pthread_create(fn=%p) = %d", (void *)fn, r);  // the game starts short-lived threads every frame
     return r;
 }
 int darwin_pthread_join(pthread_t th, void **ret) { return pthread_join(th, ret); }

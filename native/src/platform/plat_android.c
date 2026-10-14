@@ -252,6 +252,7 @@ void plat_show_alert(const char *title, const char *msg, const char **buttons, i
 void plat_open_url(const char *url) { call_void("openUrl", "(Ljava/lang/String;)V", jstr(url)); }
 void plat_request_quit(void) { call_void("confirmQuit", "()V"); }
 void plat_keep_screen_on(bool on) { (void)on; }  // the activity always keeps the screen on
+void plat_haptic(int kind) { call_void("haptic", "(I)V", kind); }
 void port_report_fatal(const char *msg) { call_void("showFatal", "(Ljava/lang/String;)V", jstr(msg)); }
 // The game called exit() (normally after saving on terminate). Let go of the
 // window, have the activity finish (it kills the process once destroyed) and
@@ -276,11 +277,11 @@ void port_on_game_exit(int code) {
 // ---------------------------------------------------------------------------
 // JNI entry points
 typedef struct {
-    char bin[512], bundle[512], docs[512], cache[512];
+    char bin[512], bundle[512], docs[512], cache[512], mods[512];
 } start_args;
 static void *game_main_thread(void *p) {
     start_args *a = p;
-    port_config cfg = {a->bin, a->bundle, a->docs, a->cache, "iPad8,1", 0};
+    port_config cfg = {a->bin, a->bundle, a->docs, a->cache, "iPad8,1", 0, a->mods[0] ? a->mods : NULL};
     port_install_crash_handler();
     int r = port_run_game(&cfg);
     LOGE("port_run_game returned %d", r);
@@ -296,15 +297,19 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 #define JNIFN(name) Java_dev_ftlport_GameActivity_##name
 
 JNIEXPORT void JNICALL JNIFN(nativeStart)(JNIEnv *env, jobject thiz, jstring bin, jstring bundle, jstring docs,
-                                          jstring cache, jint sw, jint sh, jint refresh, jfloatArray layout) {
+                                          jstring cache, jstring logs, jstring mods, jint sw, jint sh,
+                                          jint refresh, jfloatArray layout) {
+    const char *s = (*env)->GetStringUTFChars(env, logs, NULL);
+    port_log_open(s);
+    (*env)->ReleaseStringUTFChars(env, logs, s);
     g_activity = (*env)->NewGlobalRef(env, thiz);
     g_activity_cls = (*env)->NewGlobalRef(env, (*env)->GetObjectClass(env, thiz));
     start_args *a = calloc(1, sizeof(*a));
-    const char *s;
     s = (*env)->GetStringUTFChars(env, bin, NULL); strncpy(a->bin, s, 511); (*env)->ReleaseStringUTFChars(env, bin, s);
     s = (*env)->GetStringUTFChars(env, bundle, NULL); strncpy(a->bundle, s, 511); (*env)->ReleaseStringUTFChars(env, bundle, s);
     s = (*env)->GetStringUTFChars(env, docs, NULL); strncpy(a->docs, s, 511); (*env)->ReleaseStringUTFChars(env, docs, s);
     s = (*env)->GetStringUTFChars(env, cache, NULL); strncpy(a->cache, s, 511); (*env)->ReleaseStringUTFChars(env, cache, s);
+    s = (*env)->GetStringUTFChars(env, mods, NULL); strncpy(a->mods, s, 511); (*env)->ReleaseStringUTFChars(env, mods, s);
     float lay[8] = {0};
     jsize n = (*env)->GetArrayLength(env, layout);
     (*env)->GetFloatArrayRegion(env, layout, 0, n < 8 ? n : 8, lay);

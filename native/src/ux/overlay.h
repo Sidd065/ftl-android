@@ -11,4 +11,5 @@ void overlay_flash(int icon);                   // main thread
 void overlay_loupe_touch(int phase, float sx, float sy);
 void overlay_loupe_enable(bool on);
 void overlay_minimap_enable(bool on);
+void overlay_minimap_hide(bool hide);  // while zoomed in on a window
 void overlay_cursor(bool visible, float sx, float sy);  // gamepad cursor (main thread)

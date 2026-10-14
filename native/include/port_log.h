@@ -4,13 +4,18 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #define PORT_TAG "FTLPort"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, PORT_TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, PORT_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, PORT_TAG, __VA_ARGS__)
+// logcat, plus the session log file once port_log_open has run (log_android.c)
+void port_log(int prio, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void port_log_open(const char *dir);
+void port_log_mark_crash(void);  // async-signal-safe
+#define LOGI(...) port_log(ANDROID_LOG_INFO, __VA_ARGS__)
+#define LOGW(...) port_log(ANDROID_LOG_WARN, __VA_ARGS__)
+#define LOGE(...) port_log(ANDROID_LOG_ERROR, __VA_ARGS__)
 #else
 #define LOGI(...) do { fprintf(stderr, "[I] " __VA_ARGS__); fputc('\n', stderr); } while (0)
 #define LOGW(...) do { fprintf(stderr, "[W] " __VA_ARGS__); fputc('\n', stderr); } while (0)
 #define LOGE(...) do { fprintf(stderr, "[E] " __VA_ARGS__); fputc('\n', stderr); } while (0)
+static inline void port_log_mark_crash(void) {}
 #endif
 
 extern int port_verbose;

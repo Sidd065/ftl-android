@@ -46,6 +46,9 @@ int __ftl_find_macho_unwind(uintptr_t pc, uintptr_t *mh, uintptr_t *textlen, uin
     return 1;
 }
 
+static const char *g_mods_index;
+const char *port_mods_index(void) { return g_mods_index; }
+
 mo_image *port_image(void) { return &g_img; }
 uintptr_t port_image_slide(void) { return (uintptr_t)g_img.slide; }
 
@@ -56,6 +59,7 @@ int port_run_game(const port_config *cfg) {
     mkdir(g_docs_path, 0755);
     mkdir(g_cache_path, 0755);
     port_verbose = cfg->verbose;
+    g_mods_index = cfg->mods_index;
     if (cfg->hw_machine) darwin_set_hw_machine(cfg->hw_machine);
 
     darwin_libsystem_init();
@@ -148,6 +152,7 @@ static void crash_handler(int sig, siginfo_t *si, void *uc_) {
              (unsigned long long)uc->uc_mcontext.regs[i + 1], (unsigned long long)(i + 2 < 31 ? uc->uc_mcontext.regs[i + 2] : 0),
              (unsigned long long)(i + 3 < 31 ? uc->uc_mcontext.regs[i + 3] : 0));
 #endif
+    port_log_mark_crash();
     signal(sig, SIG_DFL);
     raise(sig);
 }
