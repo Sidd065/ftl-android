@@ -21,49 +21,55 @@ private storage.
 ## Requirements
 
 - An arm64 Android device on Android 8.0 or newer, with OpenGL ES 3.0.
+- About 250 MB of free storage for the imported game files.
 - FTL for iPad 1.6.21 with an unencrypted executable (`cryptid 0`). Copies
   downloaded from the App Store are FairPlay-encrypted and can't run outside
   iOS; the importer checks for this. Other versions of the game are untested
   and would run without the version-specific extras (two-finger pause,
   Back/quit handling, keyboard shortcuts).
 
-## Building
-
-You need the Android SDK (platform 36, build-tools 36.0.0), NDK 28.2.13676358,
-JDK 17 or newer, CMake, Ninja, and the LLVM 19.1.7 sources.
-
-    libcxx/build.sh android     # libc++/libc++abi/libunwind with Apple's arm64 ABI
-    android/build-apk.sh        # -> ~/ftl-build/apk/ftlport.apk
-
-The game was built against Apple's libc++, so the port links its own copy built
-to match (alternate string layout, constructors that return `this`, Darwin
-ctype masks, and libunwind that can read Mach-O compact unwind info). The
-changes to LLVM are in `libcxx/llvm-19.1.7-ftl.patch`; `build.sh` applies them.
-
-There's no Gradle: the native library is built with CMake and the NDK, then the
-APK is put together with aapt2, javac, d8, zipalign and apksigner. A signing key
-is generated in `~/ftl-build/keys/` the first time.
-
-Two optional build variables:
-
-- `GAME_APP=/path/to/FTL.app` uses the game's own icon, taken from your copy
-  at build time, and writes `ftl-personal.apk` instead. That APK contains the
-  game's artwork, so keep it to yourself.
-- `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
-  can reach the save files (handy for backups).
-
 ## Installing
 
-With the phone connected and USB debugging on:
+1. On your phone, open the
+   [latest release](https://github.com/Sidd065/ftl-android/releases/latest)
+   and download the `.apk` file under Assets.
+2. Open the downloaded file to install it. Android asks you to allow installs
+   from your browser or file manager first, and Play Protect may say it doesn't
+   recognise the app. That's normal for apps from outside the Play Store.
+3. Put your copy of the game on the phone: the `.ipa`, a zip of `FTL.app`, or
+   the extracted `FTL.app` folder. USB, a cloud drive, anything works.
+4. Open FTL, tap **Select .ipa / .zip file** (or **Select extracted FTL.app
+   folder**) and pick your copy. The app copies the two files it needs into
+   its own storage, so you can delete the `.ipa` afterwards.
+5. Pick a language and play.
 
-    tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
+### From a computer
 
-This installs the APK, copies the two game files into the app's folder and
-starts it. The app imports them on launch and deletes the copies.
+With USB debugging on, `adb install ftl-android-0.1.0.apk` installs the app;
+then import the game on the phone as above.
 
-To do it by hand, install the APK and pick your `.ipa` from the import screen.
-A zip of `FTL.app`, a zip of just `FTL` and `ftl.dat`, or the extracted folder
-also work.
+If you've cloned this repo, the install script does both steps in one go. It
+installs the APK, copies `FTL` and `ftl.dat` into the app's folder, and the
+app imports them when it starts:
+
+    APK=ftl-android-0.1.0.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
+
+### Updating
+
+Install the newer APK over the old one. Your imported game files and saves are
+kept. Uninstalling the app deletes both, saves included.
+
+An APK you build yourself is signed with your own key, so Android won't install
+a release over it (or the other way round) without uninstalling first.
+
+### If something goes wrong
+
+- "This FTL executable is still FairPlay-encrypted": your copy is the App Store
+  version as downloaded, and it can't run outside iOS.
+- "This file doesn't look like FTL for iPad": the file you picked doesn't
+  contain the `FTL` and `ftl.dat` files from `FTL.app`.
+- Crashes or a black screen: please open an issue with your phone model and the
+  output of `adb logcat -s FTLPort`.
 
 ## Playing on a phone
 
@@ -98,6 +104,34 @@ screens, always or off), two-finger pause, minimap, render resolution, and
 re-importing the game files.
 
 The game saves whenever you switch away from it, like on iOS.
+
+## Building from source
+
+You need the Android SDK (platform 36, build-tools 36.0.0), NDK 28.2.13676358,
+JDK 17 or newer, CMake, Ninja, and the LLVM 19.1.7 sources.
+
+    libcxx/build.sh android     # libc++/libc++abi/libunwind with Apple's arm64 ABI
+    android/build-apk.sh        # -> ~/ftl-build/apk/ftlport.apk
+
+The game was built against Apple's libc++, so the port links its own copy built
+to match (alternate string layout, constructors that return `this`, Darwin
+ctype masks, and libunwind that can read Mach-O compact unwind info). The
+changes to LLVM are in `libcxx/llvm-19.1.7-ftl.patch`; `build.sh` applies them.
+
+There's no Gradle: the native library is built with CMake and the NDK, then the
+APK is put together with aapt2, javac, d8, zipalign and apksigner. A signing key
+is generated in `~/ftl-build/keys/` the first time.
+
+`tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0` installs the APK you
+just built and copies the game files over.
+
+Two optional build variables:
+
+- `GAME_APP=/path/to/FTL.app` uses the game's own icon, taken from your copy
+  at build time, and writes `ftl-personal.apk` instead. That APK contains the
+  game's artwork, so keep it to yourself.
+- `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
+  can reach the save files (handy for backups).
 
 ## How it works
 
