@@ -36,7 +36,7 @@ game on the phone. Or let the script do both: it installs the APK and copies
 `FTL` and `ftl.dat` into the app's folder, and the app imports them when it
 starts.
 
-    APK=ftl-android-0.3.0.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
+    APK=ftl-android-0.3.1.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
 
 ## How it works
 
@@ -82,6 +82,10 @@ The iPad build needs some help with what mods add:
   texture when a mod added a PNG of the same name.
 - It packs small images into atlases. The app writes the atlas lists without
   the images mods replaced into a small overlay that the reader serves instead.
+
+ftlman reads mod text files as UTF-8, while Slipstream also accepts Windows-1252,
+which some older mods were saved in. The app converts such files to UTF-8
+before running ftlman, so those mods install as they do with Slipstream.
 
 Mods for Hyperspace can't work: Hyperspace patches the PC game's code.
 

@@ -60,6 +60,7 @@ These were tested in an emulator: each one installs and starts a run.
 | Mod | What it does |
 |---|---|
 | [Captain's Edition](https://subsetgames.com/forum/viewtopic.php?t=15663) | Big overhaul: events, sectors, ships, weapons. Needs its resource pack, listed first |
+| [Arsenal+](https://subsetgames.com/forum/viewtopic.php?t=29891) | Big overhaul: factions, sectors, weapons, ships. Base Resources goes first, then Base Data |
 | [Stations Job](https://subsetgames.com/forum/viewtopic.php?t=24424) | Play as a space station |
 | [The RAD Fleet](https://subsetgames.com/forum/viewtopic.php?t=27381) | Replaces all the player ships |
 | [Twinge's Balance & Bugfix](https://subsetgames.com/forum/viewtopic.php?t=26269) | Rebalance and bug fixes |
@@ -73,8 +74,7 @@ These were tested in an emulator: each one installs and starts a run.
 | [Better info](https://subsetgames.com/forum/viewtopic.php?t=38336) | Exact numbers in tooltips |
 | [Extended Pursuit Indicator](https://subsetgames.com/forum/viewtopic.php?t=26289) | Shows the rebel fleet further ahead on the map |
 
-Arsenal+ doesn't install yet: ftlman rejects a few of its files that aren't
-UTF-8. Mods that need Hyperspace, such as Multiverse, can't work yet either.
+Mods that need Hyperspace, such as Multiverse, can't work yet.
 
 ## Problems
 
