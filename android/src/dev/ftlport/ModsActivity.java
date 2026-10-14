@@ -19,10 +19,15 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-/** Adding, ordering and switching on mods, then applying them (see Mods). */
+/**
+ * Adding, ordering and switching on mods, then applying them (see Mods).
+ * Also where "Open with FTL" (and sharing a file to FTL) lands: a downloaded
+ * mod goes straight into the list, ready to apply.
+ */
 public class ModsActivity extends Activity {
     private static final int REQ_ADD = 1;
 
@@ -75,7 +80,7 @@ public class ModsActivity extends Activity {
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setPadding(0, dp(8), 0, 0);
         mAdd = button(buttons, R.string.mods_add, v -> pick());
-        mApply = button(buttons, R.string.mods_apply, v -> apply());
+        mApply = button(buttons, R.string.mods_apply, v -> checkRun(this::apply));
         mOff = button(buttons, R.string.mods_turn_off, v -> confirmOff());
         col.addView(buttons);
 
@@ -84,6 +89,36 @@ public class ModsActivity extends Activity {
         sv.addView(col);
         setContentView(sv);
         refresh();
+        if (state == null) handleIncoming(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncoming(intent);
+    }
+
+    // A file opened with FTL (VIEW) or shared to it (SEND).
+    private void handleIncoming(Intent intent) {
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
+        else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return;
+        if (Mods.isIpa(this, uri)) importGame(uri);
+        else add(Collections.singletonList(uri));
+    }
+
+    // The game itself rather than a mod: hand it to the import screen.
+    private void importGame(Uri uri) {
+        if (Importer.isInstalled(this)) {
+            error(getString(R.string.mods_game_already));
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW, uri, this, GameActivity.class);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(i);
+        finish();
     }
 
     private Button button(LinearLayout row, int label, View.OnClickListener l) {
@@ -218,19 +253,46 @@ public class ModsActivity extends Activity {
         if (clip != null)
             for (int i = 0; i < clip.getItemCount(); i++) uris.add(clip.getItemAt(i).getUri());
         else if (data.getData() != null) uris.add(data.getData());
+        add(uris);
+    }
+
+    private void add(List<Uri> uris) {
         busy(true, 0);
         new Thread(() -> {
             StringBuilder errors = new StringBuilder();
+            List<String> added = new ArrayList<>(), updated = new ArrayList<>();
+            Uri game = null;
             for (Uri u : uris) {
                 try {
-                    Mods.add(this, u);
+                    Mods.Added a = Mods.add(this, u);
+                    added.addAll(a.added);
+                    updated.addAll(a.updated);
+                } catch (Mods.GameArchiveException e) {
+                    game = u;
                 } catch (Exception e) {
                     errors.append(e.getMessage()).append('\n');
                 }
             }
+            final Uri fgame = game;
             runOnUiThread(() -> {
                 busy(false, 0);
-                if (errors.length() > 0) error(errors.toString().trim());
+                if (fgame != null) {
+                    importGame(fgame);
+                    return;
+                }
+                StringBuilder msg = new StringBuilder();
+                if (added.size() == 1) msg.append(getString(R.string.mods_added_one, added.get(0)));
+                else if (added.size() > 1) msg.append(getString(R.string.mods_added_many, added.size()));
+                if (!updated.isEmpty()) {
+                    if (msg.length() > 0) msg.append(' ');
+                    msg.append(getString(R.string.mods_updated, String.join(", ", updated)));
+                }
+                if (errors.length() > 0) {
+                    if (msg.length() > 0) msg.append("\n\n");
+                    error(msg.append(errors.toString().trim()).toString());
+                } else if (msg.length() > 0) {
+                    android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show();
+                }
             });
         }, "mods-add").start();
     }
@@ -240,10 +302,9 @@ public class ModsActivity extends Activity {
         busy(true, 0);
         new Thread(() -> {
             String err = null;
-            Mods.Result r = null;
             int[] shown = {-1};
             try {
-                r = Mods.apply(this, java.util.Arrays.asList(snapshot), (what, done, total) -> {
+                Mods.apply(this, java.util.Arrays.asList(snapshot), (what, done, total) -> {
                     int permille = total > 0 ? (int) ((long) done * 1000 / total) : 0;
                     if (permille / 10 == shown[0]) return;
                     shown[0] = permille / 10;
@@ -253,45 +314,57 @@ public class ModsActivity extends Activity {
                 err = e.getMessage() != null ? e.getMessage() : e.toString();
             }
             final String ferr = err;
-            final Mods.Result fr = r;
             runOnUiThread(() -> {
                 busy(false, 0);
                 if (ferr != null) {
                     error(getString(R.string.mods_apply_failed, ferr));
                     return;
                 }
-                if (!fr.notes.isEmpty()) {
-                    new AlertDialog.Builder(this)
-                            .setTitle(R.string.mods_notes_title)
-                            .setMessage(join(fr.notes))
-                            .setPositiveButton(R.string.mods_restart, (d, w) -> restart())
-                            .setCancelable(false)
-                            .show();
-                } else {
-                    restart();
-                }
+                restart();
             });
         }, "mods-apply").start();
     }
 
-    private void confirmOff() {
+    // A run started with other mods usually can't be loaded after they change
+    // (the game can freeze trying), so offer to set it aside first.
+    private void checkRun(Runnable then) {
+        if (!SaveTransfer.hasRun(this)) {
+            then.run();
+            return;
+        }
         new AlertDialog.Builder(this)
-                .setTitle(R.string.mods_turn_off)
-                .setMessage(R.string.mods_turn_off_confirm)
-                .setPositiveButton(R.string.mods_restart, (d, w) -> {
-                    Mods.turnOff(this);
-                    restart();
+                .setTitle(R.string.mods_run_title)
+                .setMessage(R.string.mods_run_body)
+                .setPositiveButton(R.string.mods_run_aside, (d, w) -> {
+                    try {
+                        SaveTransfer.setRunAside(this);
+                    } catch (Exception e) {
+                        error(e.getMessage());
+                        return;
+                    }
+                    then.run();
                 })
+                .setNeutralButton(R.string.mods_run_keep, (d, w) -> then.run())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private static String join(List<String> notes) {
-        StringBuilder sb = new StringBuilder();
-        int n = Math.min(notes.size(), 12);
-        for (int i = 0; i < n; i++) sb.append("• ").append(notes.get(i)).append('\n');
-        if (notes.size() > n) sb.append("… ").append(notes.size() - n).append(" more");
-        return sb.toString().trim();
+    private void confirmOff() {
+        if (SaveTransfer.hasRun(this)) {
+            checkRun(this::turnOff);  // that question is confirmation enough
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.mods_turn_off)
+                .setMessage(R.string.mods_turn_off_confirm)
+                .setPositiveButton(R.string.mods_restart, (d, w) -> turnOff())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void turnOff() {
+        Mods.turnOff(this);
+        restart();
     }
 
     private void busy(boolean on, int progress) {

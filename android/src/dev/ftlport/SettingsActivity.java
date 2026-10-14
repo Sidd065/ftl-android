@@ -38,6 +38,7 @@ public class SettingsActivity extends Activity {
     static final String K_RENDER = "render_height";         // float: 0 automatic (sharp), 768 standard
     static final String K_EVENT_TEXT = "event_text";        // int: 0 normal, 1 large, 2 larger
     static final String K_WINDOW_ZOOM = "window_zoom";      // int: 0 automatic, 1 always, 2 off
+    static final String K_EVENT_ZOOM = "event_zoom";        // boolean
     static final String K_RESUME = "resume_run";            // boolean
 
     private static final int REQ_EXPORT = 1, REQ_IMPORT = 2, REQ_LOGS = 3;
@@ -80,13 +81,15 @@ public class SettingsActivity extends Activity {
                 v -> mPrefs.edit().putBoolean(K_HAPTICS, v).apply());
 
         section(R.string.set_play);
-        toggle(R.string.set_resume, R.string.set_resume_desc, mPrefs.getBoolean(K_RESUME, true),
+        toggle(R.string.set_resume, R.string.set_resume_desc, mPrefs.getBoolean(K_RESUME, false),
                 v -> mPrefs.edit().putBoolean(K_RESUME, v).apply());
 
         section(R.string.set_graphics);
         choice(R.string.set_window_zoom, R.string.set_window_zoom_desc,
                 new int[] {R.string.set_mag_auto, R.string.set_mag_on, R.string.set_mag_off},
                 mPrefs.getInt(K_WINDOW_ZOOM, 0), v -> mPrefs.edit().putInt(K_WINDOW_ZOOM, v).apply());
+        toggle(R.string.set_event_zoom, R.string.set_event_zoom_desc, mPrefs.getBoolean(K_EVENT_ZOOM, false),
+                v -> mPrefs.edit().putBoolean(K_EVENT_ZOOM, v).apply());
         choice(R.string.set_event_text, R.string.set_event_text_desc,
                 new int[] {R.string.set_event_text_normal, R.string.set_event_text_large,
                         R.string.set_event_text_larger},

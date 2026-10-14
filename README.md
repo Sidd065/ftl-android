@@ -1,16 +1,9 @@
 # ftl-android
 
-Play the iPad version of FTL: Faster Than Light on an Android phone.
+Play the iPad version of FTL: Faster Than Light on an Android phone. This runs
+the real iOS game, with touch controls added for small screens.
 
-This isn't a remake. The original arm64 iOS executable runs inside an Android
-app: a small Mach-O loader maps it into memory, and just enough of iOS is
-reimplemented underneath it (an Objective-C runtime, libSystem, Foundation,
-UIKit, EAGL, AudioUnit) for the game to run. On top of that sits a touch layer
-that makes the iPad interface usable on a phone-sized screen.
-
-No game files are included. You need your own copy of FTL for iPad; on first
-launch the app imports two files from it (`FTL` and `ftl.dat`) into its
-private storage.
+The app doesn't include the game: you need your own copy of FTL for iPad.
 
 ![A fight on a 20:9 phone](docs/combat.png)
 
@@ -18,218 +11,81 @@ private storage.
 |---|---|
 | ![Magnifier](docs/magnifier.png) | ![Pinch zoom with minimap](docs/zoom.png) |
 
-## Requirements
+## Install
 
-- An arm64 Android device on Android 8.0 or newer, with OpenGL ES 3.0.
-- About 250 MB of free storage for the imported game files.
-- FTL for iPad 1.6.21 with an unencrypted executable (`cryptid 0`). Copies
-  downloaded from the App Store are FairPlay-encrypted and can't run outside
-  iOS; the importer checks for this. Other versions of the game are untested
-  and would run without the version-specific extras (two-finger pause,
-  Back/quit handling, keyboard shortcuts).
-
-## Installing
-
-1. On your phone, open the
+1. On your phone, download the `.apk` from the
    [latest release](https://github.com/Sidd065/ftl-android/releases/latest)
-   and download the `.apk` file under Assets.
-2. Open the downloaded file to install it. Android asks you to allow installs
-   from your browser or file manager first, and Play Protect may say it doesn't
-   recognise the app. That's normal for apps from outside the Play Store.
-3. Put your copy of the game on the phone: the `.ipa`, a zip of `FTL.app`, or
-   the extracted `FTL.app` folder. USB, a cloud drive, anything works.
-4. Open FTL, tap **Select .ipa / .zip file** (or **Select extracted FTL.app
-   folder**) and pick your copy. The app copies the two files it needs into
-   its own storage, so you can delete the `.ipa` afterwards.
-5. Pick a language and play.
+   and open it. Android will ask you to allow installs from your browser first.
+2. Open FTL and pick your copy of the game: the `.ipa`, a zip of `FTL.app`, or
+   the extracted folder. Or tap the `.ipa` in your downloads and open it with
+   FTL.
+3. Pick a language and play.
 
-### From a computer
+You need Android 8.0 or newer on a 64-bit phone, about 250 MB of free space,
+and FTL for iPad 1.6.21. Copies straight from the App Store are encrypted and
+won't work.
 
-With USB debugging on, `adb install ftl-android-0.1.0.apk` installs the app;
-then import the game on the phone as above.
+To update, install the new `.apk` over the old one. Your saves are kept.
 
-If you've cloned this repo, the install script does both steps in one go. It
-installs the APK, copies `FTL` and `ftl.dat` into the app's folder, and the
-app imports them when it starts:
-
-    APK=ftl-android-0.1.0.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
-
-### Updating
-
-Install the newer APK over the old one. Your imported game files and saves are
-kept. Uninstalling the app deletes both, saves included, so export your saves
-first (see below) if you need to uninstall.
-
-An APK you build yourself is signed with your own key, so Android won't install
-a release over it (or the other way round) without uninstalling first.
-
-### If something goes wrong
-
-- "This FTL executable is still FairPlay-encrypted": your copy is the App Store
-  version as downloaded, and it can't run outside iOS.
-- "This file doesn't look like FTL for iPad": the file you picked doesn't
-  contain the `FTL` and `ftl.dat` files from `FTL.app`.
-- Crashes or a black screen: in settings, tap **Save logs…** and attach the
-  zip to an issue. It has the last few sessions' logs, including what happened
-  in a crash, and your phone model. After a crash the app offers this itself the
-  next time it starts. `adb logcat -s FTLPort` shows the same log live.
-
-## Playing on a phone
-
-The iPad interface is drawn across the whole screen. On a 6.5" phone that makes
-everything about half its iPad size, so there are a few additions:
+## Controls
 
 | Gesture | What it does |
 |---|---|
-| Tap | Same as on the iPad. Buttons trigger when you lift your finger. |
-| Hold | Shows a magnifier: a 2x view of what's under your finger, with the touch point marked. Slide onto the target and lift. |
-| Pinch / two-finger drag | Zoom up to 3x and pan. A minimap shows where you are; tap it or pinch out to zoom back. |
-| Two-finger tap | Pause and resume. |
-| Back | Closes the open window or opens the game menu. On the title screen it asks whether to quit; the game saves first. |
+| Tap | Same as on the iPad |
+| Hold | Magnifier: slide onto a small button, then lift |
+| Pinch, two-finger drag | Zoom and pan |
+| Two-finger tap | Pause and resume |
+| Back | Close the window or open the menu |
 
-Events, the beacon map and the upgrade and cargo screens fill the screen while
-they're open, so their text is readable without pinching. The view goes back
-when they close. Doors work as on the iPad: tap the door button in the
-bottom-left corner, then tap or drag across doors to open and close them.
+To open and close doors, tap the door button in the bottom-left corner, then
+tap or drag across doors. The beacon map and the upgrade screen zoom in on
+their own. A keyboard, mouse or game controller works too; settings lists the
+buttons.
 
-The iOS build has no keyboard shortcuts of its own, so desktop-style ones are
-added and switch on the first time you press a key: Space pauses, 1-8 power
-weapons and drones (Shift removes power), the letter keys power systems, J
-jumps, U/C/I open upgrades, crew and cargo, Z/X open or close all doors (any
-time, not only in door mode), V toggles autofire, Esc opens the menu.
+## Settings and saves
 
-A mouse works too: the left button acts as a finger, the right button is Back,
-and the wheel zooms.
-
-The game ignores controllers, so a controller drives an on-screen cursor
-instead. The left stick moves it (the d-pad for fine moves), A taps, holds or
-drags at the cursor, B is Back, X pauses, LB/RB zoom, the right stick pans
-while zoomed in, holding LT shows the magnifier, Start opens the menu and
-Select resets the zoom.
-
-Long-press the app icon for settings (they're also behind Settings on the quit
-prompt). There you can set the magnifier (automatic on phone-sized screens,
-always or off), two-finger pause, the minimap, vibration, zooming in on
-windows, event text size, continuing the run at launch and render resolution,
-and manage saves, mods, logs and the imported game files.
-
-The game saves whenever you switch away from it, like on iOS. Android often
-closes apps in the background, so when you open FTL again it goes straight
-back to your run instead of the title screen.
-
-## Saves
-
-Settings has **Export saves…**, which makes a zip of your run, your profile
-(unlocks, achievements, scores) and the game's settings, and **Import
-saves…**, which takes such a zip or the files on their own (`continue.sav`,
-`prof.sav`, `settings.ini`). Use them to keep a backup or to move to another
-phone. Importing backs up what it replaces first, and **Undo last import** puts
-it back.
+Long-press the app icon for settings: the magnifier, zoom, text size, vibration
+and graphics. That's also where you export and import saves (to keep a backup
+or move to another phone), save logs, and manage mods.
 
 ## Mods
 
-Mods made for FTL 1.6 on PC work too: the `.ftl` or `.zip` files the
-[Slipstream mod manager](https://github.com/Vhati/Slipstream-Mod-Manager) uses.
-In settings, open **Mods…**, add the files, tick the ones you want and put them
-in order, then **Apply and restart**. **Turn off mods** goes back to the plain
-game without removing them.
+Mods made for FTL 1.6 on PC work, installed with
+[ftlman](https://github.com/afishhh/ftlman) like on a computer. Download a mod
+in your phone's browser, tap the file and open it with FTL, then tap **Apply
+and restart**.
 
-What's supported:
+These were tested in an emulator: each one installs and starts a run.
 
-- `.xml.append` files with Slipstream's advanced XML (`mod:findName`,
-  `mod:findLike`, `mod:findWithChildLike`, `mod:findComposite`,
-  `mod:setAttributes`, `mod:removeAttributes`, `mod:setValue`, `mod:removeTag`,
-  `mod-append:`, `mod-prepend:`, `mod-overwrite:`), plus `.xml.rawappend` and
-  `.xml.rawclobber`.
-- Replacement and new files under `data/`, `img/`, `audio/` and `fonts/`. PNG
-  images are converted to the texture format the iPad build uses, and taken out
-  of the iPad's texture atlases when a mod replaces one.
+| Mod | What it does |
+|---|---|
+| [Captain's Edition](https://subsetgames.com/forum/viewtopic.php?t=15663) | Big overhaul: events, sectors, ships, weapons. Needs its resource pack, listed first |
+| [Stations Job](https://subsetgames.com/forum/viewtopic.php?t=24424) | Play as a space station |
+| [The RAD Fleet](https://subsetgames.com/forum/viewtopic.php?t=27381) | Replaces all the player ships |
+| [Twinge's Balance & Bugfix](https://subsetgames.com/forum/viewtopic.php?t=26269) | Rebalance and bug fixes |
+| [Vicious Vessels](https://subsetgames.com/forum/viewtopic.php?t=32298) | 40 new enemy ships |
+| [Railguns, Photocasters & More!](https://subsetgames.com/forum/viewtopic.php?t=30294) | New weapons and drones |
+| [The Athena](https://subsetgames.com/forum/viewtopic.php?p=121702) | A ship you kit out yourself at the start |
+| [KRS Obsidian Cruiser](https://github.com/zedseven/ftl-obsidian-cruiser) | New ship in place of Engi B |
+| [HighRes Backgrounds and Planets](https://subsetgames.com/forum/viewtopic.php?t=30003) | Sharper backgrounds and planets |
+| [Detailed Ship Greebles](https://subsetgames.com/forum/viewtopic.php?t=26931) | More detailed hulls |
+| [FTL Event Tags](https://github.com/thrnz/FTLEventTags1.6) | Shows where event choices lead |
+| [Better info](https://subsetgames.com/forum/viewtopic.php?t=38336) | Exact numbers in tooltips |
+| [Extended Pursuit Indicator](https://subsetgames.com/forum/viewtopic.php?t=26289) | Shows the rebel fleet further ahead on the map |
 
-Mods that need Hyperspace, such as Multiverse, can't work: they change the PC
-game's code, not its data. XSLT patches aren't supported either. The iPad build
-has a few data files of its own, so a mod that replaces a whole file instead of
-appending to it can occasionally clash. If a mod makes the game crash, the app
-offers to turn mods off the next time it starts.
+Arsenal+ doesn't install yet: ftlman rejects a few of its files that aren't
+UTF-8. Mods that need Hyperspace, such as Multiverse, can't work yet either.
 
-## Building from source
+## Problems
 
-You need the Android SDK (platform 36, build-tools 36.0.0), NDK 28.2.13676358,
-JDK 17 or newer, CMake, Ninja, and the LLVM 19.1.7 sources.
+- "Still FairPlay-encrypted": that's the App Store copy of the game, which only
+  runs on iOS.
+- Crashes: in settings, tap **Save logs…** and attach the file to an
+  [issue](https://github.com/Sidd065/ftl-android/issues).
+- Only tested on Snapdragon phones so far. Game Center is off, so achievements
+  stay on the phone.
 
-    libcxx/build.sh android     # libc++/libc++abi/libunwind with Apple's arm64 ABI
-    android/build-apk.sh        # -> ~/ftl-build/apk/ftlport.apk
-
-The game was built against Apple's libc++, so the port links its own copy built
-to match (alternate string layout, constructors that return `this`, Darwin
-ctype masks, and libunwind that can read Mach-O compact unwind info). The
-changes to LLVM are in `libcxx/llvm-19.1.7-ftl.patch`; `build.sh` applies them.
-
-There's no Gradle: the native library is built with CMake and the NDK, then the
-APK is put together with aapt2, javac, d8, zipalign and apksigner. A signing key
-is generated in `~/ftl-build/keys/` the first time.
-
-`tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0` installs the APK you
-just built and copies the game files over.
-
-Two optional build variables:
-
-- `GAME_APP=/path/to/FTL.app` uses the game's own icon, taken from your copy
-  at build time, and writes `ftl-personal.apk` instead. That APK contains the
-  game's artwork, so keep it to yourself.
-- `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
-  can reach the save files (handy for backups).
-
-## How it works
-
-```
-GameActivity.java    SurfaceView, input, dialogs, lifecycle
-  | JNI
-plat_android.c       EGL surface hand-off, event queue, AAudio
-ux/                  layout, zoom, gestures, magnifier, minimap, hotkeys, mods
-fw/                  UIKit, Foundation, QuartzCore/EAGL, AudioUnit, GameKit stubs;
-                     EAGL maps onto GLES 3 (the game renders to an FBO that gets
-                     blitted to the window), BGRA swizzling, PVRTC decoded on the CPU
-objc/                Objective-C runtime with Apple's ABI (objc_msgSend in assembly)
-darwin/              libSystem: Darwin structs, pthreads, Mach semaphores, errno
-loader/              Mach-O loader: maps the arm64 slice, rebases, binds imports
-```
-
-The game believes it's running on an iPad whose screen has the phone's aspect
-ratio. It lays out a canvas 768 units tall and as wide as the screen, rendered
-at 1536 pixels tall on most phones so text stays sharp when scaled or zoomed.
-
-A few features hook specific addresses in the 1.6.21 binary (the logger, the
-pause action, hotkey lookup, menu and window state, and the ftl.dat reader for
-mods). They're only enabled when the binary's LC_UUID matches that build.
-
-Mods are merged by the app into one overlay file, and the game's ftl.dat reader
-is hooked to look there first, so `ftl.dat` itself is never changed.
-
-## Testing
-
-`native/build-harness.sh` builds a desktop harness that runs the game under
-`qemu-aarch64` with Mesa's surfaceless EGL (it needs `libcxx/build.sh linux`
-and an arm64 glibc sysroot). It takes commands from a FIFO (taps, drags,
-multi-finger gestures, screenshots, text, quit) and can record audio to a WAV
-file. It's slow, but good for scripted checks.
-
-For Android without a phone, `android/README-testing.md` describes running
-Android 11 in Docker with ARM translation. `tools/inject/` is a small
-multi-touch injector for testing pinch and two-finger gestures, since
-`adb shell input` can only do one finger at a time.
-
-On a Snapdragon phone (OPPO Find X9 Ultra, Android 16) the game loads in about
-two seconds and holds 60 fps. Over a 12-minute session of combat, jumps and a
-store visit, memory stayed around 176 MB and the phone didn't throttle. The
-app logs frame pacing every 30 seconds (`adb logcat -s FTLPort`).
-
-## Known issues
-
-- Game Center is disabled, so achievements stay local.
-- Text is small on phones. The magnifier and zoom help, but it's still the iPad
-  layout.
-- Only tested on Adreno so far (plus Android 11 in Docker). Mali and PowerVR
-  GPUs are untested.
+Building it yourself, and how it works: [docs/development.md](docs/development.md).
 
 FTL: Faster Than Light, including the artwork in the screenshots, is made by
 Subset Games. This project isn't affiliated with or endorsed by them.

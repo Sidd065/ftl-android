@@ -1,0 +1,329 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index efd5da9..148e12e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -4,6 +4,9 @@ version = "0.7.4"
+ edition = "2024"
+ 
+ [features]
++default = ["gui"]
++# The mod manager window. Without it ftlman is command-line only (e.g. on Android).
++gui = ["dep:eframe", "dep:egui_dnd", "dep:egui_extras", "dep:yeslogic-fontconfig-sys"]
+ portable-release = []
+ 
+ [dependencies]
+@@ -11,10 +14,10 @@ env_logger = "0.11"
+ log = "0.4"
+ 
+ clap = { version = "4", features = ["derive"] }
+-eframe = { version = "0.33", features = ["persistence"] }
++eframe = { version = "0.33", features = ["persistence"], optional = true }
+ ureq = "2"
+-egui_dnd = "0.14"
+-egui_extras = { version = "0.33", features = ["syntect"] }
++egui_dnd = { version = "0.14", optional = true }
++egui_extras = { version = "0.33", features = ["syntect"], optional = true }
+ dirs = "5"
+ anyhow = "1.0"
+ regex = "1"
+@@ -41,7 +44,7 @@ walkdir = "2"
+ tempfile = "3"
+ 
+ # Used for persisting state and deserializing mod metadata
+-serde = { version = "1.0", features = ["derive"] }
++serde = { version = "1.0", features = ["derive", "rc"] }
+ serde_json = "1.0"
+ # TODO: Replace with speedy-xml by implementing a serde deserializer
+ quick-xml = { version = "0.37", features = ["serialize"] }
+@@ -80,7 +83,7 @@ tar = { version = "0.4", default-features = false }
+ 
+ # For loading system fonts on Linux
+ [target.'cfg(target_os = "linux")'.dependencies]
+-yeslogic-fontconfig-sys = "6"
++yeslogic-fontconfig-sys = { version = "6", optional = true }
+ 
+ # For loading system fonts and system language detection on Windows
+ # TODO: Switch to windows-rs
+diff --git a/src/apply/mod.rs b/src/apply/mod.rs
+index e627d25..0656872 100644
+--- a/src/apply/mod.rs
++++ b/src/apply/mod.rs
+@@ -17,7 +17,7 @@ use silpkg::sync::Pkg;
+ use zip::ZipArchive;
+ 
+ use crate::{
+-    HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
++    HyperspaceState, Mod, ModSource, OpenModHandle, Settings,
+     cache::CACHE,
+     hyperspace,
+     lua::{
+@@ -971,9 +971,10 @@ pub fn apply_hyperspace(
+     release.extract_hyperspace_ftl(&mut zip)
+ }
+ 
++#[cfg(feature = "gui")]
+ pub fn apply(
+     ftl_path: PathBuf,
+-    state: Arc<Mutex<SharedState>>,
++    state: Arc<Mutex<crate::SharedState>>,
+     hs: Option<hyperspace::Installer>,
+     settings: Settings,
+     diagnostics: Option<&mut Diagnostics<'_>>,
+diff --git a/src/i18n.rs b/src/i18n.rs
+index 55c496d..baa942a 100644
+--- a/src/i18n.rs
++++ b/src/i18n.rs
+@@ -6,6 +6,7 @@ use std::{
+     },
+ };
+ 
++#[cfg(feature = "gui")]
+ use eframe::egui::{self, Color32};
+ use fluent::{FluentArgs, FluentMessage, FluentResource, concurrent::FluentBundle};
+ use log::{error, warn};
+@@ -211,6 +212,7 @@ pub fn normalize_paragraph(value: Cow<'static, str>) -> Cow<'static, str> {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ pub fn style(style: &egui::Style, message: &str) -> egui::text::LayoutJob {
+     static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[/?([a-z_-]+)\]").unwrap());
+ 
+diff --git a/src/main.rs b/src/main.rs
+index 2c94ee1..b39df61 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,5 +1,7 @@
+ #![feature(offset_of_enum)] // :)
+ #![feature(iter_order_by)] // lazy
++// Without the window much of the shared code goes unused; that's expected.
++#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+ 
+ use std::{
+     borrow::Cow,
+@@ -19,6 +21,7 @@ use std::{
+ 
+ use anyhow::{Context, Result};
+ use clap::Parser;
++#[cfg(feature = "gui")]
+ use eframe::{
+     egui::{self, DroppedFile, RichText, Sense, Ui, Visuals},
+     epaint::{
+@@ -26,6 +29,7 @@ use eframe::{
+         text::{LayoutJob, TextWrapping},
+     },
+ };
++#[cfg(feature = "gui")]
+ use egui_dnd::DragDropItem;
+ use log::{debug, error, info, warn};
+ use once_cell::sync::OnceCell;
+@@ -42,13 +46,16 @@ mod bps;
+ mod cache;
+ mod cli;
+ mod findftl;
++#[cfg(feature = "gui")]
+ mod fonts;
+ mod github;
++#[cfg(feature = "gui")]
+ mod gui;
+ mod hyperspace;
+ mod i18n;
+ mod lazy;
+ mod lua;
++#[cfg(feature = "gui")]
+ mod scan;
+ mod update;
+ mod util;
+@@ -56,6 +63,7 @@ mod validate;
+ mod xmltree;
+ 
+ use apply::ApplyStage;
++#[cfg(feature = "gui")]
+ use gui::{DeferredWindow, WindowState, ansi::layout_diagnostic_messages, pathedit::PathEdit};
+ use hyperspace::HyperspaceRelease;
+ use lazy::ResettableLazy;
+@@ -161,6 +169,13 @@ fn real_main() -> Result<ExitCode, Box<dyn Error>> {
+ 
+     update::check_run_post_update();
+ 
++    #[cfg(not(feature = "gui"))]
++    {
++        eprintln!("This build of ftlman has no window; run it with a command (see --help).");
++        return Ok(ExitCode::FAILURE);
++    }
++
++    #[cfg(feature = "gui")]
+     eframe::run_native(
+         // Windows will display special characters like "POP DIRECTIONAL ISOLATE" in the title...
+         // Remove them so it doesn't do that.
+@@ -285,6 +300,7 @@ impl ThemeStyle {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ impl ThemeSetting {
+     fn visuals(&self) -> Visuals {
+         let mut base = match self.style {
+@@ -429,6 +445,7 @@ impl Default for ThemeSetting {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ pub struct SharedState {
+     // whether something is currently being done with the mods
+     // (if this is true and apply_state is None that means we're scanning)
+@@ -442,12 +459,14 @@ pub struct SharedState {
+     mods: Vec<Mod>,
+ }
+ 
++#[cfg(feature = "gui")]
+ enum CurrentTask {
+     Scan(Promise<Result<()>>),
+     Apply(Promise<(Result<()>, Diagnostics<'static>)>),
+     None,
+ }
+ 
++#[cfg(feature = "gui")]
+ impl CurrentTask {
+     pub fn is_idle(&self) -> bool {
+         match self {
+@@ -467,6 +486,7 @@ impl CurrentTask {
+ 
+ static ERROR_IDX: AtomicU64 = AtomicU64::new(0);
+ 
++#[cfg(feature = "gui")]
+ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Item = S>) {
+     let mut job = LayoutJob {
+         wrap: egui::text::TextWrapping::from_wrap_mode_and_width(egui::TextWrapMode::Wrap, ui.available_width()),
+@@ -496,6 +516,7 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Ite
+     ui.label(galley);
+ }
+ 
++#[cfg(feature = "gui")]
+ trait Popup {
+     fn window_title(&self) -> &str;
+     fn is_modal(&self) -> bool;
+@@ -507,6 +528,7 @@ trait Popup {
+     fn show(&self, app: &mut App, ui: &mut Ui) -> bool;
+ }
+ 
++#[cfg(feature = "gui")]
+ struct ErrorPopup {
+     id: egui::Id,
+     title: String,
+@@ -514,6 +536,7 @@ struct ErrorPopup {
+     backtrace: Option<String>,
+ }
+ 
++#[cfg(feature = "gui")]
+ impl ErrorPopup {
+     #[must_use]
+     pub fn new(title: String, error: &anyhow::Error) -> Self {
+@@ -552,6 +575,7 @@ impl ErrorPopup {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ impl Popup for ErrorPopup {
+     fn window_title(&self) -> &str {
+         &self.title
+@@ -571,11 +595,13 @@ impl Popup for ErrorPopup {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ struct PatchFailedPopup {
+     error_chain: Vec<String>,
+     diagnostic_output: LayoutJob,
+ }
+ 
++#[cfg(feature = "gui")]
+ impl Popup for PatchFailedPopup {
+     fn window_title(&self) -> &str {
+         "Failed to patch mods"
+@@ -599,16 +625,19 @@ impl Popup for PatchFailedPopup {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ struct MissingHyperspacePopup {
+     mod_filename: Box<str>,
+     kind: MissingHyperspaceKind,
+ }
+ 
++#[cfg(feature = "gui")]
+ enum MissingHyperspaceKind {
+     NoReqNoHs,
+     ReqUnsatisfied(semver::VersionReq, Option<semver::Version>),
+ }
+ 
++#[cfg(feature = "gui")]
+ impl Popup for MissingHyperspacePopup {
+     fn window_title(&self) -> &str {
+         "Unsatisfied Hyperspace requirements"
+@@ -687,6 +716,7 @@ struct HyperspaceInstallerResources {
+     version_index: Arc<VersionIndex>,
+ }
+ 
++#[cfg(feature = "gui")]
+ struct App {
+     last_hovered_mod: Option<usize>,
+     shared: Arc<Mutex<SharedState>>,
+@@ -717,11 +747,13 @@ struct App {
+     vertical_divider_pos: f32,
+ }
+ 
++#[cfg(feature = "gui")]
+ struct UpdaterState {
+     progress: Arc<Mutex<UpdaterProgress>>,
+     promise: Promise<Result<Infallible>>,
+ }
+ 
++#[cfg(feature = "gui")]
+ impl App {
+     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
+         let (settings_path, is_global) = Settings::detect_path();
+@@ -1923,6 +1955,7 @@ impl App {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ impl eframe::App for App {
+     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+         self.save_non_eframe();
+@@ -1971,6 +2004,7 @@ impl eframe::App for App {
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ impl SharedState {
+     fn mod_configuration(&self) -> ModConfigurationState {
+         ModConfigurationState {
+@@ -2001,6 +2035,7 @@ struct Mod {
+     cached_hs_metadata: OnceCell<Option<HsMetadata>>,
+ }
+ 
++#[cfg(feature = "gui")]
+ impl DragDropItem for &mut Mod {
+     fn id(&self) -> egui::Id {
+         match &self.source {
+diff --git a/src/update.rs b/src/update.rs
+index e595c13..160dd02 100644
+--- a/src/update.rs
++++ b/src/update.rs
+@@ -5,6 +5,7 @@ use std::{
+ };
+ 
+ use anyhow::{Context as _, Result, bail};
++#[cfg(feature = "gui")]
+ use eframe::egui;
+ use log::{debug, error, info};
+ use parking_lot::Mutex;
+@@ -61,6 +62,7 @@ fn exec_or_spawn_and_exit(command: &mut std::process::Command) -> std::io::Resul
+     }
+ }
+ 
++#[cfg(feature = "gui")]
+ pub fn initiate_update_to(
+     release: &github::Release,
+     ctx: &egui::Context,

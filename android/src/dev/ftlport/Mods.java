@@ -3,8 +3,6 @@ package dev.ftlport;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 
@@ -15,33 +13,35 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Deque;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 /**
- * Mods in the Slipstream format (.ftl, which is a zip) made for FTL 1.6 on
- * PC. The player's mods are kept in files/mods with a list of which are on and
- * in what order. Applying them merges every mod, in order, into one overlay
- * that the game reads in front of its own ftl.dat (native ux/mods.c):
- *  - name.xml.append (or name.append.xml): Slipstream's advanced XML, see ModXml
- *  - name.xml.rawappend / name.xml.rawclobber: added to / replaces the file as text
- *  - img/....png: converted to the texture format the iPad build uses (.tex)
- *  - anything else under audio/, data/, fonts/ or img/: replaces or adds that file
+ * Mods made for FTL 1.6 on PC (.ftl files, which are zips). The player's mods
+ * are kept in files/mods with a list of which are on and in what order.
+ * Applying them runs ftlman, the mod manager also used on PC. It patches a
+ * copy of the original ftl.dat (kept as ftl.dat.vanilla) in a staging folder,
+ * and the result replaces the game's ftl.dat in one rename: a running game
+ * keeps reading the file it opened, and if anything fails nothing changes.
+ * The port then needs to know which images mods replaced (see native
+ * ux/mods.c), so the atlas lists without those images go into a small overlay.
  */
 final class Mods {
     interface Progress {
@@ -58,12 +58,7 @@ final class Mods {
         }
     }
 
-    static final class Result {
-        int files, images;
-        final List<String> notes = new ArrayList<>();
-    }
-
-    private static final Set<String> FOLDERS = new TreeSet<>(java.util.Arrays.asList("audio", "data", "fonts", "img"));
+    private static final Set<String> FOLDERS = new TreeSet<>(Arrays.asList("audio", "data", "fonts", "img"));
 
     static File dir(Context ctx) {
         return new File(ctx.getFilesDir(), "mods");
@@ -77,13 +72,21 @@ final class Mods {
         return new File(dir(ctx), "build");
     }
 
-    /** The overlay index the game should load, or null when no mods are applied. */
+    private static File dat(Context ctx) {
+        return new File(Importer.gameDir(ctx), "ftl.dat");
+    }
+
+    private static File vanilla(Context ctx) {
+        return new File(Importer.gameDir(ctx), "ftl.dat.vanilla");
+    }
+
+    /** The port's overlay index for the applied mods, or null when no mods are applied. */
     static File activeIndex(Context ctx) {
         File idx = new File(buildDir(ctx), "overlay.idx");
         return idx.isFile() && new File(buildDir(ctx), "overlay.dat").isFile() ? idx : null;
     }
 
-    /** The mods in the applied overlay, in order (empty when none). */
+    /** The applied mods, in order (empty when none). */
     static List<String> applied(Context ctx) {
         List<String> out = new ArrayList<>();
         if (activeIndex(ctx) == null) return out;
@@ -115,8 +118,32 @@ final class Mods {
         writeAtomically(listFile(ctx), sb.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Copies a picked mod into the app, checks it looks like one and adds it to the list (switched on). */
-    static String add(Context ctx, Uri uri) throws IOException {
+    /** The picked file is the game itself (an .ipa, or a zip of FTL.app), not a mod. */
+    static final class GameArchiveException extends IOException {
+        GameArchiveException(String msg) {
+            super(msg);
+        }
+    }
+
+    /** A mod made for Hyperspace, which can't work here. */
+    static final class HyperspaceException extends IOException {
+        HyperspaceException(String msg) {
+            super(msg);
+        }
+    }
+
+    /** What adding a file did: the mods it added, and the ones it updated (same name as before). */
+    static final class Added {
+        final List<String> added = new ArrayList<>(), updated = new ArrayList<>();
+    }
+
+    /**
+     * Copies a picked or opened file into the app and adds the mods in it to the
+     * list, switched on. Besides a mod itself this takes a zip with mods inside
+     * (as mods are often downloaded), and a mod with the same name as one in the
+     * list replaces it, keeping its place.
+     */
+    static Added add(Context ctx, Uri uri) throws IOException {
         ContentResolver cr = ctx.getContentResolver();
         String name = displayName(cr, uri).replace('/', '_');
         File d = dir(ctx);
@@ -128,21 +155,139 @@ final class Mods {
             byte[] buf = new byte[1 << 16];
             for (int n; (n = in.read(buf)) > 0; ) os.write(buf, 0, n);
         }
-        try (ZipFile z = new ZipFile(tmp)) {
-            if (prefix(z) == null) throw new IOException(ctx.getString(R.string.mods_not_a_mod, name));
-        } catch (IOException e) {
+        Added res = new Added();
+        try (ZipFile z = open(ctx, tmp, name)) {
+            if (prefix(z) != null) {
+                z.close();
+                store(ctx, tmp, name, true, res);
+                return res;
+            }
+            // A download that wraps one or more mods: add each of them. With
+            // several (often optional add-ons), leave the choice to the player.
+            List<ZipEntry> inner = new ArrayList<>();
+            for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+                ZipEntry e = en.nextElement();
+                String n = clean(e.getName()).toLowerCase(Locale.ROOT);
+                if (!e.isDirectory() && !n.contains("__macosx") && (n.endsWith(".ftl") || n.endsWith(".zip"))) inner.add(e);
+            }
+            if (inner.isEmpty()) {
+                if (isGame(z)) throw new GameArchiveException(ctx.getString(R.string.mods_is_game, name));
+                throw new IOException(ctx.getString(R.string.mods_not_a_mod, name));
+            }
+            for (ZipEntry e : inner) {
+                String innerName = clean(e.getName());
+                innerName = innerName.substring(innerName.lastIndexOf('/') + 1);
+                File part = new File(d, "incoming-part.tmp");
+                try (InputStream in = z.getInputStream(e); OutputStream os = new FileOutputStream(part)) {
+                    byte[] buf = new byte[1 << 16];
+                    for (int n; (n = in.read(buf)) > 0; ) os.write(buf, 0, n);
+                }
+                boolean mod;
+                try (ZipFile pz = open(ctx, part, innerName)) {
+                    mod = prefix(pz) != null;
+                } catch (HyperspaceException ex) {
+                    throw ex;
+                } catch (IOException ex) {
+                    mod = false;
+                }
+                if (mod) store(ctx, part, innerName, inner.size() == 1, res);
+                //noinspection ResultOfMethodCallIgnored
+                part.delete();
+            }
+            if (res.added.isEmpty() && res.updated.isEmpty())
+                throw new IOException(ctx.getString(R.string.mods_not_a_mod, name));
+            return res;
+        } finally {
             //noinspection ResultOfMethodCallIgnored
             tmp.delete();
-            throw e.getMessage() != null && e.getMessage().contains(name) ? e
-                    : new IOException(ctx.getString(R.string.mods_not_a_mod, name));
+        }
+    }
+
+    // Opens a zip that should be a mod, refusing mods made for Hyperspace.
+    private static ZipFile open(Context ctx, File f, String name) throws IOException {
+        ZipFile z;
+        try {
+            z = new ZipFile(f);
+        } catch (IOException e) {
+            throw new IOException(ctx.getString(R.string.mods_not_a_mod, name));
+        }
+        if (needsHyperspace(z)) {
+            z.close();
+            throw new HyperspaceException(ctx.getString(R.string.mods_hyperspace, name));
+        }
+        return z;
+    }
+
+    // Hyperspace mods carry its settings file, data/hyperspace.xml (or an append to it).
+    private static boolean needsHyperspace(ZipFile z) {
+        for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+            String n = clean(en.nextElement().getName()).toLowerCase(Locale.ROOT);
+            if (n.endsWith("data/hyperspace.xml") || n.contains("data/hyperspace.xml.")
+                    || n.endsWith("data/hyperspace.append.xml")) return true;
+        }
+        return false;
+    }
+
+    // FTL.app with the game's data in it: an .ipa or a zipped app.
+    private static boolean isGame(ZipFile z) {
+        for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+            String n = clean(en.nextElement().getName()).toLowerCase(Locale.ROOT);
+            if (n.endsWith(".app/ftl.dat")) return true;
+        }
+        return false;
+    }
+
+    // Moves a checked mod into place: a new entry, or a newer copy of one with the
+    // same name. A mod zipped with a folder around its files is unwrapped, since
+    // mod managers expect data/, img/ and so on at the top.
+    private static void store(Context ctx, File f, String name, boolean on, Added res) throws IOException {
+        try (ZipFile z = new ZipFile(f)) {
+            String root = prefix(z);
+            if (root != null && !root.isEmpty()) {
+                File flat = new File(f.getPath() + ".flat");
+                unwrap(z, root, flat);
+                z.close();
+                if (!f.delete() || !flat.renameTo(f)) throw new IOException("Couldn't store " + name);
+            }
         }
         List<Mod> mods = load(ctx);
-        String file = name;
-        for (int i = 2; new File(d, file).exists(); i++) file = i + " " + name;
-        if (!tmp.renameTo(new File(d, file))) throw new IOException("Couldn't store " + name);
-        mods.add(new Mod(file, true));
+        File target = new File(dir(ctx), name);
+        boolean known = false;
+        for (Mod m : mods)
+            if (m.file.equals(name)) known = true;
+        if (target.exists() && !known) {  // a stray file left behind: replace it
+            //noinspection ResultOfMethodCallIgnored
+            target.delete();
+        }
+        if (target.exists() && !target.delete() || !f.renameTo(target))
+            throw new IOException("Couldn't store " + name);
+        if (known) {
+            res.updated.add(name);
+        } else {
+            mods.add(new Mod(name, on));
+            res.added.add(name);
+        }
         save(ctx, mods);
-        return file;
+    }
+
+    private static void unwrap(ZipFile z, String root, File out) throws IOException {
+        byte[] buf = new byte[1 << 16];
+        try (ZipOutputStream zo = new ZipOutputStream(new FileOutputStream(out))) {
+            for (Enumeration<? extends ZipEntry> en = z.entries(); en.hasMoreElements(); ) {
+                ZipEntry e = en.nextElement();
+                String n = clean(e.getName());
+                if (e.isDirectory() || !n.startsWith(root) || n.length() == root.length()) continue;
+                zo.putNextEntry(new ZipEntry(n.substring(root.length())));
+                try (InputStream in = z.getInputStream(e)) {
+                    for (int r; (r = in.read(buf)) > 0; ) zo.write(buf, 0, r);
+                }
+                zo.closeEntry();
+            }
+        }
+    }
+
+    static boolean isIpa(Context ctx, Uri uri) {
+        return displayName(ctx.getContentResolver(), uri).toLowerCase(Locale.ROOT).endsWith(".ipa");
     }
 
     static void remove(Context ctx, String file) throws IOException {
@@ -153,9 +298,43 @@ final class Mods {
         new File(dir(ctx), file).delete();
     }
 
-    /** Stops using mods (the files stay in the list). */
+    /**
+     * Stops using mods (the files stay in the list): puts the original ftl.dat
+     * back. Also called when the game files are imported again, which leaves
+     * nothing to restore.
+     */
     static void turnOff(Context ctx) {
+        File vanilla = vanilla(ctx);
+        if (vanilla.isFile() && !vanilla.renameTo(dat(ctx)))
+            android.util.Log.e("FTLPort", "mods: couldn't restore ftl.dat");
         deleteTree(buildDir(ctx));
+        deleteTree(stageDir(ctx));
+        markChanged(ctx);
+    }
+
+    private static File stageDir(Context ctx) {
+        return new File(dir(ctx), "stage");
+    }
+
+    // A run saved with other mods may not load, so after a change the game
+    // starts at the title screen instead of continuing (see GameActivity).
+    private static File changedMarker(Context ctx) {
+        return new File(dir(ctx), "changed");
+    }
+
+    private static void markChanged(Context ctx) {
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            dir(ctx).mkdirs();
+            //noinspection ResultOfMethodCallIgnored
+            changedMarker(ctx).createNewFile();
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** True once after the mods changed. */
+    static boolean takeChanged(Context ctx) {
+        return changedMarker(ctx).delete();
     }
 
     // Files of a mod are relative to its root, which holds data/, img/ and so on.
@@ -183,214 +362,180 @@ final class Mods {
     }
 
     // ---------------------------------------------------------------- applying
-    /** Merges the switched-on mods and makes them the ones the game uses. */
-    static Result apply(Context ctx, List<Mod> mods, Progress progress) throws IOException, ModXml.ModException {
-        Result res = new Result();
+    /** Patches the game with the switched-on mods, in order, using ftlman. */
+    static void apply(Context ctx, List<Mod> mods, Progress progress) throws IOException {
         List<Mod> on = new ArrayList<>();
         for (Mod m : mods)
             if (m.on) on.add(m);
         if (on.isEmpty()) {
             turnOff(ctx);
-            return res;
+            return;
         }
-        try (Pkg pkg = new Pkg(new File(Importer.gameDir(ctx), "ftl.dat"))) {
-            Overlay ov = new Overlay(pkg);
-            int total = 0, done = 0;
-            for (Mod m : on)
-                try (ZipFile z = new ZipFile(new File(dir(ctx), m.file))) {
-                    total += z.size();
-                }
-            for (Mod m : on) {
-                try (ZipFile z = new ZipFile(new File(dir(ctx), m.file))) {
-                    String root = prefix(z);
-                    if (root == null) throw new IOException(ctx.getString(R.string.mods_not_a_mod, m.file));
-                    List<? extends ZipEntry> entries = Collections.list(z.entries());
-                    for (ZipEntry e : entries) {
-                        progress.onProgress(m.file, ++done, total);
-                        String name = clean(e.getName());
-                        if (e.isDirectory() || !name.startsWith(root)) continue;
-                        name = name.substring(root.length());
-                        int slash = name.indexOf('/');
-                        if (slash < 0 || !FOLDERS.contains(name.substring(0, slash).toLowerCase(Locale.ROOT))) continue;
-                        byte[] body;
-                        try (InputStream in = z.getInputStream(e)) {
-                            body = readAll(in);
-                        }
-                        ov.add(m.file + ": " + name, name, body, res);
-                    }
-                }
-            }
-            ov.fixAtlases();
-            write(ctx, ov, on, res);
-        }
-        return res;
-    }
-
-    private static final class Overlay {
-        final Pkg pkg;
-        final Map<String, byte[]> files = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        final Map<String, ModXml.Doc> docs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        final Set<String> images = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);  // replaced img/....png
-
-        Overlay(Pkg pkg) {
-            this.pkg = pkg;
-        }
-
-        // The game's spelling for files it has.
-        String key(String name) {
-            String k = pkg.name(name);
-            return k != null ? k : name;
-        }
-
-        byte[] current(String name) throws IOException {
-            ModXml.Doc d = docs.get(name);
-            if (d != null) return ModXml.write(d).getBytes(StandardCharsets.UTF_8);
-            byte[] b = files.get(name);
-            return b != null ? b : pkg.read(name);
-        }
-
-        void put(String name, byte[] body) {
-            docs.remove(name);
-            files.put(key(name), body);
-        }
-
-        void add(String where, String name, byte[] body, Result res) throws IOException, ModXml.ModException {
-            String lower = name.toLowerCase(Locale.ROOT);
-            String target;
-            if ((target = strip(name, lower, ".xml.append", ".append.xml")) != null) {
-                ModXml.Doc d = docs.get(target);
-                if (d == null) {
-                    byte[] base = current(target);
-                    d = ModXml.parse(base != null ? text(base) : "");
-                    files.remove(target);
-                    docs.put(key(target), d);
-                }
-                ModXml.append(d, text(body), where, res.notes);
-            } else if ((target = strip(name, lower, ".xml.rawappend", ".rawappend.xml")) != null) {
-                byte[] base = current(target);
-                put(target, (base != null ? text(base) + "\r\n" + text(body) : text(body)).getBytes(StandardCharsets.UTF_8));
-            } else if ((target = strip(name, lower, ".xml.rawclobber", ".rawclobber.xml")) != null) {
-                put(target, body);
-            } else if (lower.startsWith("img/") && lower.endsWith(".png")) {
-                byte[] tex = texture(body);
-                if (tex == null) {
-                    res.notes.add(where + ": not a PNG image the app can read; skipped");
-                    return;
-                }
-                put(name.substring(0, name.length() - 4) + ".tex", tex);
-                images.add(name);
-                res.images++;
-            } else {
-                put(name, body);
+        // Refuse Hyperspace mods added before that check existed, and make sure
+        // there's room: the patched copy (and the original, the first time).
+        File vanilla = vanilla(ctx), stage = stageDir(ctx);
+        long need = (64L << 20) + (vanilla.isFile() ? vanilla : dat(ctx)).length();
+        if (!vanilla.isFile()) need += dat(ctx).length();
+        for (Mod m : on) {
+            File f = new File(dir(ctx), m.file);
+            try (ZipFile z = open(ctx, f, m.file)) {
+                need += f.length() * 2;
             }
         }
+        long free = Importer.gameDir(ctx).getUsableSpace();
+        if (free < need)
+            throw new IOException(ctx.getString(R.string.mods_no_space, (need - free + (1 << 20) - 1) >> 20));
 
-        private static String strip(String name, String lower, String suffix, String alt) {
-            if (lower.endsWith(suffix)) return name.substring(0, name.length() - suffix.length()) + ".xml";
-            if (lower.endsWith(alt)) return name.substring(0, name.length() - alt.length()) + ".xml";
-            return null;
+        boolean swapped = false;
+        try {
+            if (!vanilla.isFile()) {  // first time: keep the original
+                File tmp = new File(vanilla.getPath() + ".tmp");
+                copy(dat(ctx), tmp);
+                if (!tmp.renameTo(vanilla)) throw new IOException("Couldn't keep a copy of ftl.dat");
+            }
+            deleteTree(stage);
+            if (!stage.mkdirs()) throw new IOException("Couldn't create " + stage);
+            // ftlman patches <dir>/ftl.dat, starting from <dir>/ftl.dat.vanilla.
+            android.system.Os.symlink(vanilla.getPath(), new File(stage, "ftl.dat.vanilla").getPath());
+            runFtlman(ctx, stage, on, progress);
+            File patched = new File(stage, "ftl.dat");
+            writeOverlay(ctx, patched, on);
+            if (!patched.renameTo(dat(ctx))) throw new IOException("Couldn't install the patched ftl.dat");
+            swapped = true;
+            File build = buildDir(ctx), old = new File(dir(ctx), "build.old"), next = new File(dir(ctx), "build.tmp");
+            deleteTree(old);
+            if (build.exists() && !build.renameTo(old)) throw new IOException("Couldn't replace the applied mods");
+            if (!next.renameTo(build)) throw new IOException("Couldn't apply the mods");
+            deleteTree(old);
+        } catch (android.system.ErrnoException e) {
+            throw new IOException(e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            if (swapped) turnOff(ctx);  // don't leave a patched ftl.dat without its overlay
+            throw e;
+        } finally {
+            deleteTree(stage);
+            deleteTree(new File(dir(ctx), "build.tmp"));
         }
+        markChanged(ctx);
+    }
 
-        // The iPad build packs many small images into atlases (atlas/*.txt lists
-        // "name x y w h"). A replaced image must come out of its atlas, or the
-        // game would keep using the packed original.
-        void fixAtlases() throws IOException {
-            if (images.isEmpty()) return;
-            for (String atlas : pkg.names("atlas/")) {
-                if (!atlas.toLowerCase(Locale.ROOT).endsWith(".txt")) continue;
-                String[] lines = text(current(atlas)).split("\n", -1);
-                StringBuilder sb = new StringBuilder();
-                boolean changed = false;
-                for (String line : lines) {
-                    String first = line.trim().split("\\s+", 2)[0];
-                    if (!first.isEmpty() && images.contains(first)) {
-                        changed = true;
-                        continue;
-                    }
-                    if (sb.length() > 0) sb.append('\n');
-                    sb.append(line);
+    private static void copy(File from, File to) throws IOException {
+        try (InputStream in = new java.io.FileInputStream(from); FileOutputStream out = new FileOutputStream(to)) {
+            byte[] buf = new byte[1 << 20];
+            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+            out.getFD().sync();
+        }
+    }
+
+    // Its warnings (often leftovers that mods carry for older versions of FTL)
+    // only go to the log, as with ftlman on PC.
+    private static void runFtlman(Context ctx, File dataDir, List<Mod> on, Progress progress) throws IOException {
+        File exe = new File(ctx.getApplicationInfo().nativeLibraryDir, "libftlman.so");
+        List<String> cmd = new ArrayList<>(Arrays.asList(exe.getPath(), "patch", "--data-dir", dataDir.getPath()));
+        for (Mod m : on) cmd.add(new File(dir(ctx), m.file).getPath());
+        ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
+        // ftlman keeps its settings in the usual per-user folders: give it some of ours.
+        File home = new File(ctx.getFilesDir(), "ftlman");
+        Map<String, String> env = pb.environment();
+        env.put("HOME", home.getPath());
+        env.put("XDG_CONFIG_HOME", new File(home, "config").getPath());
+        env.put("XDG_DATA_HOME", new File(home, "data").getPath());
+        env.put("XDG_CACHE_HOME", new File(ctx.getCacheDir(), "ftlman").getPath());
+        env.put("TMPDIR", ctx.getCacheDir().getPath());
+        env.put("RUST_LOG", "info");
+        env.put("NO_COLOR", "1");
+        //noinspection ResultOfMethodCallIgnored
+        home.mkdirs();
+
+        Process p = pb.start();
+        Deque<String> tail = new ArrayDeque<>();
+        int applied = 0;
+        File log = new File(Logs.dir(ctx), "ftlman-last-run.txt");  // goes into Save logs
+        //noinspection ResultOfMethodCallIgnored
+        log.getParentFile().mkdirs();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+             Writer w = new OutputStreamWriter(new FileOutputStream(log), StandardCharsets.UTF_8)) {
+            w.write(String.join(" ", cmd) + "\n");
+            for (String line; (line = r.readLine()) != null; ) {
+                line = line.replaceAll("\u001b\\[[0-9;]*m", "").trim();  // no colours, just in case
+                if (line.isEmpty()) continue;
+                w.write(line + "\n");
+                if (tail.size() == 20) tail.removeFirst();
+                tail.addLast(line);
+                if (line.contains("Applying mod ")) {
+                    progress.onProgress(line.substring(line.indexOf("Applying mod ") + 13), applied, on.size());
+                    applied++;
                 }
-                if (changed) put(atlas, sb.toString().getBytes(StandardCharsets.UTF_8));
             }
         }
+        int code;
+        try {
+            code = p.waitFor();
+        } catch (InterruptedException e) {
+            p.destroy();
+            throw new IOException("Interrupted");
+        }
+        if (code != 0) {
+            StringBuilder sb = new StringBuilder();
+            for (String l : tail)
+                if (l.startsWith("[ERROR]"))
+                    sb.append(l.substring(7).trim().replaceFirst("^#\\d+:\\s*", "")).append('\n');
+            throw new IOException(sb.length() > 0 ? sb.toString().trim() : "ftlman stopped with code " + code);
+        }
     }
 
-    private static String text(byte[] b) {
-        return new String(b, StandardCharsets.UTF_8);
-    }
-
-    /** A PNG as an uncompressed 32-bit .tex (BGRA, straight alpha), or null. */
-    static byte[] texture(byte[] png) {
-        BitmapFactory.Options o = new BitmapFactory.Options();
-        o.inPremultiplied = false;
-        o.inScaled = false;
-        o.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap b = BitmapFactory.decodeByteArray(png, 0, png.length, o);
-        if (b == null) return null;
-        int w = b.getWidth(), h = b.getHeight();
-        if (w > 0xffff || h > 0xffff) return null;
-        int[] px = new int[w * h];
-        b.getPixels(px, 0, w, 0, 0, w, h);
-        b.recycle();
-        ByteBuffer out = ByteBuffer.allocate(32 + px.length * 4);
-        out.putInt(0x5445580A);           // "TEX\n"
-        out.put((byte) 2).put((byte) 8);  // version 2, 32-bit BGRA
-        out.put((byte) 0).put((byte) 0);
-        out.putShort((short) w).putShort((short) h);
-        out.putInt(0x10000);              // scale 1.0 (16.16)
-        out.putInt(32).putInt(px.length * 4);
-        out.putInt(0).putInt(0);          // no hit mask
-        for (int c : px) out.put((byte) c).put((byte) (c >> 8)).put((byte) (c >> 16)).put((byte) (c >>> 24));
-        return out.array();
-    }
-
-    // Writes the overlay next to the current one, then swaps it in.
-    private static void write(Context ctx, Overlay ov, List<Mod> on, Result res) throws IOException {
-        for (Map.Entry<String, ModXml.Doc> e : ov.docs.entrySet())
-            ov.files.put(e.getKey(), ModXml.write(e.getValue()).getBytes(StandardCharsets.UTF_8));
+    // The atlas lists without the images mods replaced, so the game loads the
+    // mods' files instead of the packed originals. Goes to build.tmp.
+    private static void writeOverlay(Context ctx, File patched, List<Mod> on) throws IOException {
         File tmp = new File(dir(ctx), "build.tmp");
         deleteTree(tmp);
         if (!tmp.mkdirs()) throw new IOException("Couldn't create " + tmp);
-        Deflater def = new Deflater(6);
-        byte[] buf = new byte[1 << 16];
-        try (OutputStream dat = new FileOutputStream(new File(tmp, "overlay.dat"));
+        try (Pkg pkg = new Pkg(patched);
+             OutputStream dat = new FileOutputStream(new File(tmp, "overlay.dat"));
              Writer idx = new OutputStreamWriter(new FileOutputStream(new File(tmp, "overlay.idx")),
                      StandardCharsets.UTF_8)) {
+            Set<String> images = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            for (String n : pkg.names("img/"))
+                if (n.toLowerCase(Locale.ROOT).endsWith(".png")) images.add(n);
             long off = 0;
-            for (Map.Entry<String, byte[]> e : ov.files.entrySet()) {
-                byte[] body = e.getValue();
-                def.reset();
-                def.setInput(body);
-                def.finish();
-                ByteArrayOutputStream z = new ByteArrayOutputStream(body.length / 2 + 64);
-                while (!def.finished()) z.write(buf, 0, def.deflate(buf));
-                z.writeTo(dat);
-                idx.write(off + "\t" + z.size() + "\t" + body.length + "\t" + (ov.pkg.has(e.getKey()) ? 0 : 1) + "\t"
-                        + e.getKey() + "\n");
-                off += z.size();
+            Deflater def = new Deflater(6);
+            byte[] buf = new byte[1 << 16];
+            try {
+                for (String atlas : pkg.names("atlas/")) {
+                    if (images.isEmpty() || !atlas.toLowerCase(Locale.ROOT).endsWith(".txt")) continue;
+                    String text = new String(pkg.read(atlas), StandardCharsets.UTF_8);
+                    StringBuilder sb = new StringBuilder();
+                    boolean changed = false;
+                    for (String line : text.split("\n", -1)) {
+                        String first = line.trim().split("\\s+", 2)[0];
+                        if (!first.isEmpty() && images.contains(first)) {
+                            changed = true;
+                            continue;
+                        }
+                        if (sb.length() > 0) sb.append('\n');
+                        sb.append(line);
+                    }
+                    if (!changed) continue;
+                    byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
+                    def.reset();
+                    def.setInput(body);
+                    def.finish();
+                    ByteArrayOutputStream z = new ByteArrayOutputStream(body.length / 2 + 64);
+                    while (!def.finished()) z.write(buf, 0, def.deflate(buf));
+                    z.writeTo(dat);
+                    idx.write(off + "\t" + z.size() + "\t" + body.length + "\t0\t" + atlas + "\n");
+                    off += z.size();
+                }
+            } finally {
+                def.end();
             }
-        } finally {
-            def.end();
         }
         StringBuilder names = new StringBuilder();
         for (Mod m : on) names.append(m.file).append('\n');
         writeAtomically(new File(tmp, "applied.txt"), names.toString().getBytes(StandardCharsets.UTF_8));
-        File build = buildDir(ctx), old = new File(dir(ctx), "build.old");
-        deleteTree(old);
-        if (build.exists() && !build.renameTo(old)) throw new IOException("Couldn't replace the applied mods");
-        if (!tmp.renameTo(build)) throw new IOException("Couldn't apply the mods");
-        deleteTree(old);
-        res.files = ov.files.size();
     }
 
     // ---------------------------------------------------------------- helpers
-    private static byte[] readAll(InputStream in) throws IOException {
-        ByteArrayOutputStream bo = new ByteArrayOutputStream();
-        byte[] buf = new byte[1 << 16];
-        for (int n; (n = in.read(buf)) > 0; ) bo.write(buf, 0, n);
-        return bo.toByteArray();
-    }
-
     private static void writeAtomically(File f, byte[] data) throws IOException {
         File tmp = new File(f.getPath() + ".tmp");
         //noinspection ResultOfMethodCallIgnored
@@ -410,7 +555,7 @@ final class Mods {
         f.delete();
     }
 
-    private static String displayName(ContentResolver cr, Uri uri) {
+    static String displayName(ContentResolver cr, Uri uri) {
         try (Cursor c = cr.query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst() && !c.isNull(0)) return c.getString(0);
         } catch (Exception ignored) {
@@ -422,4 +567,5 @@ final class Mods {
     static long size(Context ctx, String file) {
         return new File(dir(ctx), file).length();
     }
+
 }

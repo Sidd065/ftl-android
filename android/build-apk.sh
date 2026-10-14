@@ -5,6 +5,7 @@
 #   GAME_APP=/path/to/FTL.app ./build-apk.sh   -> $OUT/ftl-personal.apk with the game's own icon
 #   DEBUGGABLE=1 ./build-apk.sh   -> marks the APK debuggable (adb run-as can reach saves; code stays optimized)
 #     (taken from your copy at build time; never stored in the repo or the default APK)
+# ftlman, which installs mods, is built separately with ftlman/build.sh (FTLMAN=path to override).
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
@@ -16,10 +17,15 @@ OUT=${OUT:-$HOME/ftl-build/apk}
 NATIVE_BUILD=${NATIVE_BUILD:-$HOME/ftl-build/android-native}
 LIBCXX_DIR=${LIBCXX_DIR:-$HOME/ftl-build/libcxx/android}
 KEYSTORE=${KEYSTORE:-$HOME/ftl-build/keys/ftlport.keystore}
+FTLMAN=${FTLMAN:-$HOME/ftl-build/ftlman/libftlman.so}
 BUILD_TYPE=${1:-release}
 # A build with the game's icon is for your own device only; keep it apart.
 APK_NAME=$([ -n "${GAME_APP:-}" ] && echo ftl-personal.apk || echo ftlport.apk)
 
+if [ ! -f "$FTLMAN" ]; then
+  echo "ftlman not found at $FTLMAN: run ftlman/build.sh first" >&2
+  exit 1
+fi
 mkdir -p "$OUT" "$(dirname "$KEYSTORE")"
 WORK=$(mktemp -d "$OUT/work.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
@@ -32,6 +38,7 @@ cmake -G Ninja -S "$ROOT/native" -B "$NATIVE_BUILD" \
   -DLIBCXX_DIR="$LIBCXX_DIR" >/dev/null
 ninja -C "$NATIVE_BUILD"
 mkdir -p "$WORK/lib/arm64-v8a"
+cp "$FTLMAN" "$WORK/lib/arm64-v8a/libftlman.so"
 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-debug -o "$WORK/lib/arm64-v8a/libftlport.so" \
   "$NATIVE_BUILD/libftlport.so"
 
@@ -57,7 +64,8 @@ javac --release 17 -nowarn -cp "$PLATFORM" -d "$WORK/classes" \
 
 echo "== package"
 cp "$WORK/base.apk" "$WORK/unaligned.apk"
-(cd "$WORK" && zip -q -X "$WORK/unaligned.apk" classes.dex && zip -q -X -0 "$WORK/unaligned.apk" lib/arm64-v8a/libftlport.so)
+(cd "$WORK" && zip -q -X "$WORK/unaligned.apk" classes.dex lib/arm64-v8a/libftlman.so \
+  && zip -q -X -0 "$WORK/unaligned.apk" lib/arm64-v8a/libftlport.so)
 "$BT/zipalign" -P 16 -f 4 "$WORK/unaligned.apk" "$WORK/aligned.apk"
 if [ ! -f "$KEYSTORE" ]; then
   keytool -genkeypair -keystore "$KEYSTORE" -storepass ftlport -keypass ftlport -alias ftlport \

@@ -4,8 +4,8 @@
 //  - gestures: two-finger tap toggles pause; single touches go to the game
 //  - Android Back -> Escape; hardware keyboard + mouse -> the game's own
 //    (desktop-heritage) key and mouse events
-//  - events, the beacon map and the upgrade screen zoomed in on phones;
-//    event text size; continuing the saved run at launch
+//  - the beacon map and the upgrade screen zoomed in on phones (events too, as
+//    an option); event text size; continuing the saved run at launch
 //  - game logger hook for diagnostics; mods (mods.c)
 #include "ux.h"
 
@@ -23,6 +23,7 @@
 #include "../port_main.h"
 #include "mods.h"
 #include "overlay.h"
+#include "png.h"
 #include "ux_present.h"
 #include "port_log.h"
 
@@ -49,13 +50,16 @@ static const int MENU_SUBSCREENS[] = {0x26b8, 0x3d00, 0x3fd0, 0x26c8, 0x15f0};
 #define GUI_STARMAP 0x1e90  // CommandGui: StarMap * (+8 open, +0x88 int x, y, +0x900 choosing the next sector)
 #define GUI_FOCUS_WINDOWS 0x1ea0  // CommandGui: std::vector<FocusWindow *> (FocusWindow +8: bool open)
 #define GUI_UPGRADES 0x3cf0 // CommandGui: the ship / crew / cargo window (+0x68 tab)
+// CommandGui: boxes that take keys before any focus window (the game menu, options,
+// confirmations); each has its open flag at +8. While one is up it covers everything.
+static const int GUI_MODALS[] = {0x5948, 0x2248, 0x27e8, 0x3c68, 0x5648, 0x28f8};
 #define GUI_CHOICE 0x1f68   // CommandGui: ChoiceBox, the event window (+8 open)
 #define CHOICE_FRAME 0x28   // ChoiceBox: WindowFrame * (int x, y, w, h from the box's corner)
 #define CHOICE_LIST 0x48    // ChoiceBox: std::vector<ChoiceText>, 584-byte entries
 #define CHOICE_COLUMN 0x60  // ChoiceBox: unsigned; more choices than this use a different, wide layout
 #define CHOICE_FONT 0x88    // ChoiceBox: int font size, 10..13 (the desktop font +/- hotkeys)
 #define CHOICE_CENTRED 0x8c // ChoiceBox: bool; false moves the box left, clear of an enemy ship
-#define CHOICE_BOTTOM 0x2d4 // ChoiceBox: float, where the text, rewards and choices end (set while drawing)
+#define CHOICE_RECTS 0x68   // ChoiceBox: std::vector of int x, y, w, h, one per choice (HUD units)
 
 typedef struct {
     int32_t cls, type;
@@ -79,8 +83,9 @@ static bool g_mag_auto;              // magnifier wanted in "automatic" mode (sm
 static bool g_two_finger_pause = true;
 static bool g_haptics = true;
 static int g_event_text;             // event text: 0 the game's size, 1 large, 2 larger
-static int g_window_zoom;            // zoom in on windows: 0 automatic (phones), 1 always, 2 off
-static bool g_resume_run = true;     // continue the saved run at launch
+static int g_window_zoom;            // zoom in on the map and upgrades: 0 automatic (phones), 1 always, 2 off
+static bool g_event_zoom;            // zoom in on events (off: it hides the HUD you may want to check)
+static bool g_resume_run;            // continue the saved run at launch (a setting, off by default)
 static int g_event_font_default;     // the game's own size (10; 9 in Japanese, which has 9 and 12 only)
 
 static double now_s(void) {
@@ -195,6 +200,7 @@ int ux_patches_apply(mo_image *img) {
         __builtin___clear_cache((char *)dk_open, (char *)(dk_close + 1));
     } else
         LOGW("ux: unexpected code in door hotkeys; Z/X only work in door mode");
+    fails += png_install(img) != 0;
     if (mods_install(img, port_mods_index()) != 0) LOGW("ux: mods could not be loaded; playing without them");
     return fails ? -1 : 0;
 }
@@ -727,13 +733,15 @@ static void apply_event_font(void) {
 // What to zoom in on: the open window's useful part, in HUD units (the iPad's
 // 1024-wide layout, which the game centres on our wider screen).
 static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
+    // The game gives keys to the first open window in this list, so it runs
+    // front to back: the menu comes before an event, an event before the store
+    // (which can stay open underneath one).
+    for (size_t i = 0; i < sizeof GUI_MODALS / sizeof *GUI_MODALS; i++)
+        if (gui[GUI_MODALS[i] + 8]) return false;
     uint8_t *open = NULL;
     uint8_t **fw = (uint8_t **)(gui + GUI_FOCUS_WINDOWS);
-    for (uint8_t **w = (uint8_t **)fw[0]; w < (uint8_t **)fw[1]; w++)
-        if (*w && (*w)[8]) {
-            if (open) return false;  // two at once, e.g. the menu over an event
-            open = *w;
-        }
+    for (uint8_t **w = (uint8_t **)fw[0]; w < (uint8_t **)fw[1] && !open; w++)
+        if (*w && (*w)[8]) open = *w;
     *top = false;
     if (open == gui + GUI_CHOICE) {
         // Event. ChoiceBox::OnRender puts the box at (199, 149), 150 further left when
@@ -746,11 +754,18 @@ static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
         // Too many choices: the game uses a different, wider layout. Leave that one be.
         uint8_t **list = (uint8_t **)(box + CHOICE_LIST);
         if ((size_t)(list[1] - list[0]) / 584 > *(uint32_t *)(box + CHOICE_COLUMN)) return false;
+        // The choices' rectangles are laid out once and then rewritten with the same
+        // values each frame, so they're safe to read while the game draws.
         double x = (box[CHOICE_CENTRED] ? 199 : 49) + frame[0] - 7, y = 149 + frame[1] - 7;
-        double bottom = fmin(y + frame[3] + 14, *(float *)(box + CHOICE_BOTTOM) + 8);
+        const int32_t *const *rects = (const int32_t *const *)(box + CHOICE_RECTS);
+        double last = 0;
+        for (const int32_t *c = rects[0]; c && c + 4 <= rects[1]; c += 4)
+            if (c[3] > 0 && c[1] + c[3] > last) last = c[1] + c[3];
+        if (last <= y) return false;  // not laid out yet
+        double bottom = fmin(y + frame[3] + 14, last + 12);
         *r = (rectd){x, y, x + frame[2] + 14, bottom};
         *top = true;
-        return frame[2] > 0 && bottom - y > 40;
+        return frame[2] > 0;
     }
     if (open == gui + GUI_UPGRADES) {
         // Ship upgrades and cargo, with the description panel to the right. The crew
@@ -768,16 +783,17 @@ static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
     return false;
 }
 
-// On phone-sized screens an event window, the beacon map or the upgrade screen
-// gets the screen to itself, so its text is readable without pinching. The view
-// goes back once it closes, unless the player moved it in between.
+// On phone-sized screens the beacon map and the upgrade screen get the screen to
+// themselves, so their text is readable without pinching; events too, if the
+// player wants. The view goes back once the window closes, unless the player
+// moved it in between.
 static void autozoom_tick(void) {
     uint8_t *a = capp();
     uint8_t *gui = a && !a[CAPP_MENU] && !a[CAPP_STARTUP] ? *(uint8_t **)(a + CAPP_GUI) : NULL;
-    bool want = g_window_zoom == 1 || (g_window_zoom == 0 && g_mag_auto);
+    bool want_windows = g_window_zoom == 1 || (g_window_zoom == 0 && g_mag_auto);
     rectd r;
-    bool top;
-    if (want && gui && window_rect(gui, &r, &top)) {
+    bool top;  // set for events
+    if (gui && window_rect(gui, &r, &top) && (top ? g_event_zoom : want_windows)) {
         g_az.closed_since = 0;
         if (g_az.player_moved || g_mode != G_IDLE) return;  // not while a finger is down
         // An event's text layout is only known once it has been drawn: wait for two equal readings.
@@ -810,7 +826,7 @@ static void autozoom_tick(void) {
     // Wait a moment before going back: one event often follows another.
     double t = now_s();
     if (!g_az.closed_since) g_az.closed_since = t;
-    if (t - g_az.closed_since < 0.2 && gui && want) return;
+    if (t - g_az.closed_since < 0.2 && gui && (g_event_zoom || want_windows)) return;
     if (!g_az.player_moved) set_view(g_az.before, 0.25);
     g_az.active = g_az.player_moved = false;
     g_az.closed_since = 0;
@@ -954,6 +970,7 @@ void ux_set_option(const char *key, float value) {
     else if (!strcmp(key, "haptics")) g_haptics = value != 0;
     else if (!strcmp(key, "event_text")) g_event_text = (int)value;
     else if (!strcmp(key, "window_zoom")) g_window_zoom = (int)value;
+    else if (!strcmp(key, "event_zoom")) g_event_zoom = value != 0;
     else if (!strcmp(key, "resume_run")) g_resume_run = value != 0;
 }
 

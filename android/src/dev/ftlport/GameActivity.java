@@ -81,8 +81,27 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             getWindow().setAttributes(lp);
         }
         getWindow().getDecorView().setBackgroundColor(Color.BLACK);
-        if (Importer.isInstalled(this)) startGame();
-        else tryAutoImportThenShowImporter();
+        Uri game = incomingGame(getIntent());
+        if (Importer.isInstalled(this)) {
+            startGame();
+        } else if (game != null) {
+            showImporter(null);
+            runImport(false, game);
+        } else {
+            tryAutoImportThenShowImporter();
+        }
+    }
+
+    // The .ipa someone opened with FTL (passed on by ModsActivity).
+    private static Uri incomingGame(Intent i) {
+        return i != null && Intent.ACTION_VIEW.equals(i.getAction()) ? i.getData() : null;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        Uri game = incomingGame(intent);
+        if (game != null && mSurface == null && mPickArchive != null && mPickArchive.isEnabled()) runImport(false, game);
     }
 
     // ------------------------------------------------------------------ import UI
@@ -326,6 +345,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         nativeSetOption("haptics", prefs.getBoolean(SettingsActivity.K_HAPTICS, true) ? 1 : 0);
         nativeSetOption("event_text", prefs.getInt(SettingsActivity.K_EVENT_TEXT, 0));
         nativeSetOption("window_zoom", prefs.getInt(SettingsActivity.K_WINDOW_ZOOM, 0));
+        nativeSetOption("event_zoom", prefs.getBoolean(SettingsActivity.K_EVENT_ZOOM, false) ? 1 : 0);
     }
 
     private int refreshRate() {
@@ -357,9 +377,12 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             nativeStart(new File(game, "FTL").getPath(), game.getPath(), docs.getPath(), cache.getPath(),
                     logs.getPath(), mods != null ? mods.getPath() : "", w, h, refreshRate(), computeLayout(w, h));
             pushOptions();
-            // After a crash, start at the title screen in case the saved run is what crashed.
+            // After a crash, or once the mods changed, start at the title screen: the
+            // saved run may be what crashed, or may not load with the new mods.
+            boolean modsChanged = Mods.takeChanged(this);
             SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
-            nativeSetOption("resume_run", !crashed && prefs.getBoolean(SettingsActivity.K_RESUME, true) ? 1 : 0);
+            nativeSetOption("resume_run",
+                    !crashed && !modsChanged && prefs.getBoolean(SettingsActivity.K_RESUME, false) ? 1 : 0);
             scanPads();
             if (crashed) mMain.postDelayed(this::offerCrashLogs, 1500);
         }
@@ -687,6 +710,26 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             int fx = kind == 1 ? HapticFeedbackConstants.LONG_PRESS
                     : Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
             mSurface.performHapticFeedback(fx);
+        });
+    }
+
+    // The game stopped drawing while on screen (native watchdog). It's been marked
+    // as a crash, so the next start offers the logs and skips the saved run.
+    @SuppressWarnings("unused")
+    void onHang() {
+        mMain.post(() -> {
+            if (mExiting || isFinishing()) return;
+            AlertDialog d = new AlertDialog.Builder(this)
+                    .setTitle(R.string.hang_title)
+                    .setMessage(R.string.hang_body)
+                    .setPositiveButton(R.string.hang_close, (dlg, w) -> {
+                        finishAndRemoveTask();
+                        android.os.Process.killProcess(android.os.Process.myPid());
+                    })
+                    .setNegativeButton(R.string.hang_wait, null)
+                    .setOnDismissListener(dlg -> enterImmersive())
+                    .create();
+            showDialog(d);
         });
     }
 

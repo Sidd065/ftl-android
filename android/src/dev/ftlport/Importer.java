@@ -127,6 +127,7 @@ final class Importer {
         }
         deleteRecursive(dir);
         if (!tmp.renameTo(dir)) throw new IOException("cannot move imported files into place");
+        Mods.turnOff(ctx);  // any mods were applied to the old copy
     }
 
     /** Returns null if usable, else a human-readable reason. */

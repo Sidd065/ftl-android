@@ -26,6 +26,7 @@ set(CORE_SOURCES
     src/ux/ux.c
     src/ux/overlay.c
     src/ux/mods.c
+    src/ux/png.c
 )
 
 set(COMMON_FLAGS -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers

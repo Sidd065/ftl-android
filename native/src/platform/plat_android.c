@@ -134,7 +134,13 @@ void plat_gl_surface_size(int *w, int *h) {
     *w = g_surface_w;
     *h = g_surface_h;
 }
+static int64_t g_last_present_ms;  // CLOCK_MONOTONIC ms of the last frame shown
+static bool g_foreground;          // between nativeResume and nativePause
+static double now_s(void);
+static void mark_presented(void) { __atomic_store_n(&g_last_present_ms, (int64_t)(now_s() * 1000), __ATOMIC_RELAXED); }
+
 void plat_gl_present(void) {
+    mark_presented();
     if (g_win_surface != EGL_NO_SURFACE && !eglSwapBuffers(g_dpy, g_win_surface)) {
         EGLint e = eglGetError();
         LOGW("eglSwapBuffers failed: %#x", e);
@@ -275,6 +281,27 @@ void port_on_game_exit(int code) {
 }
 
 // ---------------------------------------------------------------------------
+// Watchdog: the game draws every frame, even while loading. If it stops while
+// on screen, it's stuck (e.g. loading a run saved with other mods). Say so, and
+// mark the session like a crash so the next start skips the saved run.
+static void *watchdog_thread(void *p) {
+    (void)p;
+    bool reported = false;
+    for (;;) {
+        sleep(5);
+        double last = __atomic_load_n(&g_last_present_ms, __ATOMIC_RELAXED) / 1000.0;
+        bool stuck = g_foreground && g_has_window && last > 0 && now_s() - last > 30;
+        if (stuck && !reported) {
+            LOGE("watchdog: no frame for %.0f s; the game seems stuck", now_s() - last);
+            port_log_mark_crash();
+            call_void("onHang", "()V");
+        }
+        reported = stuck;
+    }
+    return NULL;
+}
+
+// ---------------------------------------------------------------------------
 // JNI entry points
 typedef struct {
     char bin[512], bundle[512], docs[512], cache[512], mods[512];
@@ -320,6 +347,9 @@ JNIEXPORT void JNICALL JNIFN(nativeStart)(JNIEnv *env, jobject thiz, jstring bin
     pthread_attr_setstacksize(&at, 8 * 1024 * 1024);
     pthread_create(&th, &at, game_main_thread, a);
     pthread_attr_destroy(&at);
+    g_foreground = true;
+    pthread_t wd;
+    if (pthread_create(&wd, NULL, watchdog_thread, NULL) == 0) pthread_detach(wd);
 }
 
 JNIEXPORT void JNICALL JNIFN(nativeAttach)(JNIEnv *env, jobject thiz) {
@@ -372,11 +402,14 @@ JNIEXPORT void JNICALL JNIFN(nativeTouch)(JNIEnv *env, jobject thiz, jint phase,
 }
 JNIEXPORT void JNICALL JNIFN(nativePause)(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
+    g_foreground = false;
     q_push((pevent){.type = EV_PAUSE});
     plat_audio_pause(true);
 }
 JNIEXPORT void JNICALL JNIFN(nativeResume)(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
+    mark_presented();  // give the game time to wake up
+    g_foreground = true;
     q_push((pevent){.type = EV_RESUME});
     plat_audio_pause(false);
 }

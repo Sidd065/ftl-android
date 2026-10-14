@@ -194,6 +194,17 @@ final class SaveTransfer {
         for (Map.Entry<String, byte[]> e : files.entrySet()) write(new File(docs, e.getKey()), e.getValue());
     }
 
+    static boolean hasRun(Context ctx) {
+        return new File(docsDir(ctx), RUN).length() > 0;
+    }
+
+    /** Moves the run in progress out of the game's way. "Restore earlier saves" brings it back. */
+    static void setRunAside(Context ctx) throws IOException {
+        if (!hasRun(ctx)) return;
+        backUp(ctx);
+        if (!new File(docsDir(ctx), RUN).delete()) throw new IOException("Couldn't set the run aside");
+    }
+
     private static void backUp(Context ctx) throws IOException {
         File dir = backupDir(ctx);
         //noinspection ResultOfMethodCallIgnored
@@ -220,7 +231,7 @@ final class SaveTransfer {
         return backups(ctx).length > 0;
     }
 
-    /** Puts back the saves from before the last import. */
+    /** Puts back the saves from before the last import, or before a run was set aside. */
     static void undoImport(Context ctx) throws IOException {
         File[] all = backups(ctx);
         if (all.length == 0) return;
