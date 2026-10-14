@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original artwork: an abstract starship with a jump streak. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#4DB6E8FF" android:pathData="M18,56 L44,52 L44,56 L18,58 Z" />
+    <path android:fillColor="#80B6E8FF" android:pathData="M24,61 L44,58 L44,61 L24,62 Z" />
+    <path android:fillColor="#FFE0E6EB" android:pathData="M44,46 L70,44 L86,54 L70,64 L44,62 L50,54 Z" />
+    <path android:fillColor="#FF7FC6E8" android:pathData="M66,49 L78,54 L66,59 Z" />
+    <path android:fillColor="#FFB0BEC5" android:pathData="M52,40 L62,44 L52,46 Z" />
+    <path android:fillColor="#FFB0BEC5" android:pathData="M52,68 L62,64 L52,62 Z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M40,51 L46,52 L46,56 L40,57 Z" />
+</vector>

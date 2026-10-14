@@ -1,0 +1,9 @@
+libcxx/build-*/
+libcxx/out/
+libcxx/*.log
+build*/
+*.o
+*.so
+*.apk
+*.idsig
+__pycache__/

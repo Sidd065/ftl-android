@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FTL</string>
+    <string name="import_title">FTL for Android</string>
+    <string name="import_body">This port runs the iPad version of FTL: Faster Than Light. It doesn\'t include the game itself.\n\nSelect your copy of the iPad app (an .ipa file, or a .zip of it), or a folder containing the extracted FTL.app. Only the files FTL and ftl.dat are copied into the app\'s private storage.</string>
+    <string name="import_pick_ipa">Select .ipa / .zip file</string>
+    <string name="import_pick_folder">Select extracted FTL.app folder</string>
+    <string name="import_checking">Looking for game files…</string>
+    <string name="import_copying">Copying game files…</string>
+    <string name="import_progress">%1$s — %2$d MB</string>
+    <string name="import_failed">Import failed.</string>
+    <string name="text_input_title">Enter a name</string>
+    <string name="quit_title">Quit FTL?</string>
+    <string name="quit_yes">Quit</string>
+    <string name="fatal_title">FTL couldn\'t start</string>
+    <string name="settings_title">FTL settings</string>
+    <string name="settings_short">Settings</string>
+    <string name="set_touch">Touch</string>
+    <string name="set_magnifier">Magnifier</string>
+    <string name="set_magnifier_desc">While you hold a finger down, shows a magnified view of what\'s under it. Slide to adjust and lift to tap.</string>
+    <string name="set_mag_auto">Automatic (phone-sized screens)</string>
+    <string name="set_mag_on">Always</string>
+    <string name="set_mag_off">Off</string>
+    <string name="set_two_finger">Two-finger tap pauses</string>
+    <string name="set_two_finger_desc">Tap anywhere with two fingers to pause or resume.</string>
+    <string name="set_minimap">Minimap while zoomed</string>
+    <string name="set_minimap_desc">Shows the whole screen in a corner while zoomed in. Tap it to zoom back out.</string>
+    <string name="set_graphics">Graphics</string>
+    <string name="set_render">Render resolution</string>
+    <string name="set_render_desc">Takes effect the next time the game starts.</string>
+    <string name="set_render_sharp">Sharp (renders at twice the game\'s resolution)</string>
+    <string name="set_render_fast">Standard (faster on older devices)</string>
+    <string name="set_controls">Controls</string>
+    <string name="set_controls_body">• Tap works like on the iPad.\n• Hold a finger to see the magnifier, slide onto small buttons, then lift.\n• Pinch to zoom in (up to 3×). Drag with two fingers to look around. Tap the minimap or pinch out to zoom back.\n• Two-finger tap: pause or resume.\n• Back: closes the open window or opens the game menu. On the title screen it asks to quit.\n• Keyboard: Space pauses, 1–8 power weapons and drones (Shift removes power), A/S/D/F/W/E… power systems, J jump, U upgrades, C crew, I cargo, Z/X open or close all doors. \n• Mouse: left button taps and drags, right button is Back, the wheel zooms.\n• Game controller: the left stick (or d-pad, for fine moves) steers a cursor and A taps there. B is Back, X pauses, LB/RB zoom, the right stick looks around, holding LT shows the magnifier, Start opens the menu.</string>
+    <string name="set_files">Game files</string>
+    <string name="set_files_desc">The imported copy of FTL lives in the app\'s private storage. Your saves and settings are kept when you import again.</string>
+    <string name="set_reimport">Import game files again…</string>
+    <string name="set_reimport_confirm">This removes the imported game files and restarts the app at the import screen. Saves are kept.</string>
+    <string name="set_reimport_yes">Remove and restart</string>
+</resources>
