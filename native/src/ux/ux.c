@@ -4,7 +4,9 @@
 //  - gestures: two-finger tap toggles pause; single touches go to the game
 //  - Android Back -> Escape; hardware keyboard + mouse -> the game's own
 //    (desktop-heritage) key and mouse events
-//  - game logger hook for diagnostics
+//  - events, the beacon map and the upgrade screen zoomed in on phones;
+//    event text size; continuing the saved run at launch
+//  - game logger hook for diagnostics; mods (mods.c)
 #include "ux.h"
 
 #include <math.h>
@@ -19,6 +21,7 @@
 #include "../patches.h"
 #include "../platform/platform.h"
 #include "../port_main.h"
+#include "mods.h"
 #include "overlay.h"
 #include "ux_present.h"
 #include "port_log.h"
@@ -30,6 +33,9 @@
 #define G_TIME_BASE 0x100250c88ull    // double, event timestamp base (s)
 #define G_TOGGLE_PAUSE 0x100180240ull // void (CommandGui *): the pause hotkey's action
 #define G_HOTKEY 0x100040728ull       // int (const std::string *action): `return 0` on iOS
+// DoorBox::KeyDown: `cbz` that skips the open / close hotkey while that button is hidden
+#define G_DOOR_KEY_OPEN 0x100097f9cull
+#define G_DOOR_KEY_CLOSE 0x100097fe4ull
 
 // CApp fields
 #define CAPP_GUI 0x10       // CommandGui *
@@ -37,7 +43,19 @@
 #define CAPP_STARTUP 0x40b8 // language chooser / startup screen up (game ignores keys)
 // MainMenu fields: sub-screens that Escape closes
 static const int MENU_SUBSCREENS[] = {0x26b8, 0x3d00, 0x3fd0, 0x26c8, 0x15f0};
+#define MENU_CONTINUE_ACTIVE 0x80  // MainMenu: the Continue button is active (there's a saved run)
+#define MENU_ITEM 0x450            // MainMenu: int, the button just pressed; CApp acts on it (9: Continue)
 #define GUI_PAUSED 0x3c58   // CommandGui: bool paused
+#define GUI_STARMAP 0x1e90  // CommandGui: StarMap * (+8 open, +0x88 int x, y, +0x900 choosing the next sector)
+#define GUI_FOCUS_WINDOWS 0x1ea0  // CommandGui: std::vector<FocusWindow *> (FocusWindow +8: bool open)
+#define GUI_UPGRADES 0x3cf0 // CommandGui: the ship / crew / cargo window (+0x68 tab)
+#define GUI_CHOICE 0x1f68   // CommandGui: ChoiceBox, the event window (+8 open)
+#define CHOICE_FRAME 0x28   // ChoiceBox: WindowFrame * (int x, y, w, h from the box's corner)
+#define CHOICE_LIST 0x48    // ChoiceBox: std::vector<ChoiceText>, 584-byte entries
+#define CHOICE_COLUMN 0x60  // ChoiceBox: unsigned; more choices than this use a different, wide layout
+#define CHOICE_FONT 0x88    // ChoiceBox: int font size, 10..13 (the desktop font +/- hotkeys)
+#define CHOICE_CENTRED 0x8c // ChoiceBox: bool; false moves the box left, clear of an enemy ship
+#define CHOICE_BOTTOM 0x2d4 // ChoiceBox: float, where the text, rewards and choices end (set while drawing)
 
 typedef struct {
     int32_t cls, type;
@@ -59,6 +77,11 @@ static mo_image *g_img;
 static float g_dpi = 400.0f;
 static bool g_mag_auto;              // magnifier wanted in "automatic" mode (small screen)
 static bool g_two_finger_pause = true;
+static bool g_haptics = true;
+static int g_event_text;             // event text: 0 the game's size, 1 large, 2 larger
+static int g_window_zoom;            // zoom in on windows: 0 automatic (phones), 1 always, 2 off
+static bool g_resume_run = true;     // continue the saved run at launch
+static int g_event_font_default;     // the game's own size (10; 9 in Japanese, which has 9 and 12 only)
 
 static double now_s(void) {
     struct timespec ts;
@@ -163,6 +186,16 @@ int ux_patches_apply(mo_image *img) {
         fails += patch_branch(img, G_HOTKEY, (void *)hotkey_lookup) != 0;
     else
         LOGW("ux: unexpected code at hotkey lookup; keyboard shortcuts disabled");
+    // The open/close-all-doors keys are tied to the door control buttons, which
+    // the iPad build only shows in door mode. Accept them any time, like the
+    // desktop game; the ship still checks that the door system is working.
+    uint32_t *dk_open = mo_ptr(img, G_DOOR_KEY_OPEN), *dk_close = mo_ptr(img, G_DOOR_KEY_CLOSE);
+    if (*dk_open == 0x34000228u && *dk_close == 0x34000228u) {  // cbz w8, ...
+        *dk_open = *dk_close = 0xD503201Fu;                       // nop
+        __builtin___clear_cache((char *)dk_open, (char *)(dk_close + 1));
+    } else
+        LOGW("ux: unexpected code in door hotkeys; Z/X only work in door mode");
+    if (mods_install(img, port_mods_index()) != 0) LOGW("ux: mods could not be loaded; playing without them");
     return fails ? -1 : 0;
 }
 
@@ -272,6 +305,16 @@ static rectd target_view(void) {
     return v;
 }
 void ux_reset_zoom(bool animate) { set_view(full_view(), animate ? 0.18 : 0); }
+
+// Zoomed in on a window (see autozoom_tick)
+static struct {
+    bool active, player_moved;
+    rectd before;         // the view to go back to
+    double closed_since;  // the window has been shut since (0: it's open)
+} g_az;
+static void view_moved_by_player(void) {
+    if (g_az.active) g_az.player_moved = true;
+}
 
 // surface px -> game px under the (target) view
 static void surface_to_game(double sx, double sy, double *gx, double *gy) {
@@ -393,9 +436,13 @@ static void gesture_end(void) {
         // two-finger tap: pause / unpause
         int paused = g_two_finger_pause ? toggle_pause() : -1;
         LOGI("ux: two-finger tap (%.0f ms) -> paused %d", dur * 1000, paused);
-        if (paused >= 0) overlay_flash(paused ? OVERLAY_ICON_PAUSE : OVERLAY_ICON_PLAY);
+        if (paused >= 0) {
+            overlay_flash(paused ? OVERLAY_ICON_PAUSE : OVERLAY_ICON_PLAY);
+            ux_haptic(2);
+        }
     } else {
         rectd v = target_view();
+        view_moved_by_player();
         LOGI("ux: pinch/pan end, zoom %.2f (%.0f ms, moved %.0f px)", view_zoom(v), dur * 1000, g_gmove);
         if (view_zoom(v) < 1.08) ux_reset_zoom(true);
     }
@@ -452,7 +499,10 @@ void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
         forward(phase, &P[s], t);
         overlay_loupe_touch(0, sx, sy);
     }
-    if (g_minimap_press && phase == TOUCH_ENDED && overlay_minimap_hit(sx, sy)) ux_reset_zoom(true);
+    if (g_minimap_press && phase == TOUCH_ENDED && overlay_minimap_hit(sx, sy)) {
+        view_moved_by_player();
+        ux_reset_zoom(true);
+    }
     g_minimap_press = false;
     bool was_gesture_finger = g_mode == G_GESTURE && (s == g_ga || s == g_gb);
     P[s].active = false;
@@ -623,6 +673,7 @@ static void cursor_hide(void) {
 static void zoom_at(double factor, double sx, double sy) {
     present_rect d = present_get_dest();
     rectd v = target_view();
+    view_moved_by_player();
     double z = view_zoom(v) * factor;
     if (z < 1.05) {
         ux_reset_zoom(true);
@@ -640,6 +691,7 @@ static void pan_by(double dx, double dy) {
     present_rect d = present_get_dest();
     rectd v = target_view();
     if (view_zoom(v) < 1.01 || d.w <= 0) return;
+    view_moved_by_player();
     double k = (v.x1 - v.x0) / d.w;
     set_view((rectd){v.x0 + dx * k, v.y0 + dy * k, v.x1 + dx * k, v.y1 + dy * k}, 0);
 }
@@ -651,8 +703,149 @@ static void loupe_update(void) {
     g_cur.loupe = want;
 }
 
-// Main thread, every run-loop pass: move the cursor, pan.
+// Keep the event window's text at the size picked in settings.
+static void apply_event_font(void) {
+    static int set;  // the size we last put there (0: the game's own is in use)
+    uint8_t *a = capp();
+    if (!a || a[CAPP_MENU] || a[CAPP_STARTUP]) return;
+    uint8_t *gui = *(uint8_t **)(a + CAPP_GUI);
+    if (!gui) return;
+    int *size = (int *)(gui + GUI_CHOICE + CHOICE_FONT);
+    if (!g_event_font_default) {
+        if (*size < 9 || *size > 13) return;
+        g_event_font_default = *size;
+    }
+    int want = g_event_text == 0 ? (set ? g_event_font_default : 0)
+             : g_event_font_default < 10 || g_event_text == 1 ? 12 : 13;
+    if (want && *size != want) {
+        LOGI("ux: event text size %d -> %d", *size, want);
+        *size = want;
+    }
+    set = g_event_text ? want : 0;
+}
+
+// What to zoom in on: the open window's useful part, in HUD units (the iPad's
+// 1024-wide layout, which the game centres on our wider screen).
+static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
+    uint8_t *open = NULL;
+    uint8_t **fw = (uint8_t **)(gui + GUI_FOCUS_WINDOWS);
+    for (uint8_t **w = (uint8_t **)fw[0]; w < (uint8_t **)fw[1]; w++)
+        if (*w && (*w)[8]) {
+            if (open) return false;  // two at once, e.g. the menu over an event
+            open = *w;
+        }
+    *top = false;
+    if (open == gui + GUI_CHOICE) {
+        // Event. ChoiceBox::OnRender puts the box at (199, 149), 150 further left when
+        // not centred; the frame's outline reaches 7 units past its rect. The frame is
+        // at least 377 tall, so short events leave it mostly empty: stop below the last
+        // choice and keep the top in view.
+        uint8_t *box = open;
+        const int *frame = *(int **)(box + CHOICE_FRAME);
+        if (!frame) return false;
+        // Too many choices: the game uses a different, wider layout. Leave that one be.
+        uint8_t **list = (uint8_t **)(box + CHOICE_LIST);
+        if ((size_t)(list[1] - list[0]) / 584 > *(uint32_t *)(box + CHOICE_COLUMN)) return false;
+        double x = (box[CHOICE_CENTRED] ? 199 : 49) + frame[0] - 7, y = 149 + frame[1] - 7;
+        double bottom = fmin(y + frame[3] + 14, *(float *)(box + CHOICE_BOTTOM) + 8);
+        *r = (rectd){x, y, x + frame[2] + 14, bottom};
+        *top = true;
+        return frame[2] > 0 && bottom - y > 40;
+    }
+    if (open == gui + GUI_UPGRADES) {
+        // Ship upgrades and cargo, with the description panel to the right. The crew
+        // tab's dismissal box sits too low to gain much, so that tab stays as it is.
+        if (*(uint32_t *)(open + 0x68) == 1) return false;
+        *r = (rectd){46, 85, 977, 594};
+        return true;
+    }
+    uint8_t *map = *(uint8_t **)(gui + GUI_STARMAP);
+    if (open && open == map && !map[0x900]) {  // the beacon map, not the sector map
+        int x = *(int *)(map + 0x88), y = *(int *)(map + 0x8c);
+        *r = (rectd){x + 1, y + 1, x + 751, y + 580};
+        return true;
+    }
+    return false;
+}
+
+// On phone-sized screens an event window, the beacon map or the upgrade screen
+// gets the screen to itself, so its text is readable without pinching. The view
+// goes back once it closes, unless the player moved it in between.
+static void autozoom_tick(void) {
+    uint8_t *a = capp();
+    uint8_t *gui = a && !a[CAPP_MENU] && !a[CAPP_STARTUP] ? *(uint8_t **)(a + CAPP_GUI) : NULL;
+    bool want = g_window_zoom == 1 || (g_window_zoom == 0 && g_mag_auto);
+    rectd r;
+    bool top;
+    if (want && gui && window_rect(gui, &r, &top)) {
+        g_az.closed_since = 0;
+        if (g_az.player_moved || g_mode != G_IDLE) return;  // not while a finger is down
+        // An event's text layout is only known once it has been drawn: wait for two equal readings.
+        static rectd last;
+        bool settled = !memcmp(&r, &last, sizeof r);
+        last = r;
+        if (!settled) return;
+        double k = g_display.render_h / 768.0, hud_x = (g_display.render_w / k - 1024) / 2;
+        r = (rectd){(r.x0 + hud_x) * k, r.y0 * k, (r.x1 + hud_x) * k, r.y1 * k};  // HUD units -> game px
+        // Beyond about 2.2x the 2x render would look soft.
+        double m = 14 * k;  // breathing room around the window
+        double z = fmin(g_display.render_w / (r.x1 - r.x0 + 2 * m), g_display.render_h / (r.y1 - r.y0 + 2 * m));
+        if (z > 2.2) z = 2.2;
+        if (z < 1.15) return;
+        double cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2, vw = g_display.render_w / z, vh = g_display.render_h / z;
+        double y0 = top ? r.y0 - m : cy - vh / 2;
+        rectd v = clamp_view((rectd){cx - vw / 2, y0, cx + vw / 2, y0 + vh});
+        rectd cur = target_view();
+        if (fabs(cur.x0 - v.x0) + fabs(cur.y0 - v.y0) + fabs(cur.x1 - v.x1) + fabs(cur.y1 - v.y1) < 2) return;
+        if (!g_az.active) {
+            g_az.active = true;
+            g_az.before = cur;
+            LOGI("ux: zooming in on a window (%.2fx)", z);
+        }
+        set_view(v, 0.25);
+        overlay_minimap_hide(true);
+        return;
+    }
+    if (!g_az.active) return;
+    // Wait a moment before going back: one event often follows another.
+    double t = now_s();
+    if (!g_az.closed_since) g_az.closed_since = t;
+    if (t - g_az.closed_since < 0.2 && gui && want) return;
+    if (!g_az.player_moved) set_view(g_az.before, 0.25);
+    g_az.active = g_az.player_moved = false;
+    g_az.closed_since = 0;
+    overlay_minimap_hide(false);
+}
+
+// Android often ends the app while it's in the background, which on iOS was
+// rare: come back to the run, not the title screen. Once, right after launch.
+static void resume_run_tick(void) {
+    static bool done;
+    static double t_menu;
+    uint8_t *a = capp();
+    if (done || !a || a[CAPP_STARTUP]) return;  // the language chooser comes first
+    if (!a[CAPP_MENU] || !at_top_menu()) {
+        done = !a[CAPP_MENU];  // already playing
+        t_menu = 0;
+        return;
+    }
+    // The menu marks Continue active on its first frames: give it a moment.
+    double t = now_s();
+    if (!t_menu) t_menu = t;
+    if (t - t_menu < 0.5) return;
+    done = true;
+    uint8_t *menu = a + CAPP_MENU;
+    if (!g_resume_run || !menu[MENU_CONTINUE_ACTIVE]) return;
+    LOGI("ux: continuing the saved run");
+    *(int32_t *)(menu + MENU_ITEM) = 9;
+}
+
+// Main thread, every run-loop pass: resuming at launch, event text and window zoom,
+// gamepad cursor, panning.
 void ux_tick(void) {
+    resume_run_tick();
+    apply_event_font();
+    autozoom_tick();
     double t = now_s(), dt = t - g_cur.t_last;
     g_cur.t_last = t;
     if (dt > 0.1) dt = 0.1;
@@ -758,6 +951,14 @@ void ux_set_option(const char *key, float value) {
     else if (!strcmp(key, "magnifier")) overlay_loupe_enable(value == 1 || (value == 0 && g_mag_auto));
     else if (!strcmp(key, "two_finger_pause")) g_two_finger_pause = value != 0;
     else if (!strcmp(key, "minimap")) overlay_minimap_enable(value != 0);
+    else if (!strcmp(key, "haptics")) g_haptics = value != 0;
+    else if (!strcmp(key, "event_text")) g_event_text = (int)value;
+    else if (!strcmp(key, "window_zoom")) g_window_zoom = (int)value;
+    else if (!strcmp(key, "resume_run")) g_resume_run = value != 0;
+}
+
+void ux_haptic(int kind) {
+    if (g_haptics) plat_haptic(kind);
 }
 
 // ---------------------------------------------------------------------------------

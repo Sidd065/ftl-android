@@ -8,6 +8,7 @@ typedef struct {
     const char *cache_dir;    // writable: caches
     const char *hw_machine;   // reported sysctl hw.machine
     int verbose;
+    const char *mods_index;   // overlay of modded files (see ux/mods.c), or NULL
 } port_config;
 
 int port_run_game(const port_config *cfg);   // never returns on success (UIApplicationMain)
@@ -17,5 +18,6 @@ void port_on_game_exit(int code);            // platform: game called exit()
 struct mo_image;
 struct mo_image *port_image(void);
 uintptr_t port_image_slide(void);
+const char *port_mods_index(void);
 void port_install_crash_handler(void);
 void port_backtrace_from(uintptr_t pc, uintptr_t lr, uintptr_t fp, const char *why);

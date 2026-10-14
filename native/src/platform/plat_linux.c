@@ -258,6 +258,7 @@ void plat_show_alert(const char *title, const char *msg, const char **b, int n) 
 }
 void plat_open_url(const char *url) { LOGI("harness: open url %s", url); }
 void plat_keep_screen_on(bool on) { (void)on; }
+void plat_haptic(int kind) { (void)kind; }
 void port_report_fatal(const char *msg) { LOGE("harness: fatal: %s", msg); }
 void port_on_game_exit(int code) {
     LOGI("harness: game exit %d", code);
@@ -418,6 +419,7 @@ int main(int argc, char **argv) {
     snprintf(docs, sizeof docs, "%s/Documents", data);
     snprintf(cache, sizeof cache, "%s/Caches", data);
     mkdir(data, 0755);
-    port_config cfg = {bin, app, docs, cache, getenv("FTL_HWMACHINE"), getenv("FTL_VERBOSE") ? 1 : 0};
+    port_config cfg = {bin, app, docs, cache, getenv("FTL_HWMACHINE"), getenv("FTL_VERBOSE") ? 1 : 0,
+                       getenv("FTL_MODS")};
     return port_run_game(&cfg);
 }

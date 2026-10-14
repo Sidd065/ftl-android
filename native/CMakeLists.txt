@@ -25,6 +25,7 @@ set(CORE_SOURCES
     src/patches.c
     src/ux/ux.c
     src/ux/overlay.c
+    src/ux/mods.c
 )
 
 set(COMMON_FLAGS -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
@@ -45,7 +46,8 @@ if(FTL_HARNESS)
         -Wl,--export-dynamic-symbol=malloc -Wl,--export-dynamic-symbol=calloc)
     target_link_libraries(ftlrun PRIVATE ${CXX_LIBS} EGL GLESv2 z pthread dl m)
 else()
-    add_library(ftlport SHARED ${CORE_SOURCES} src/platform/plat_android.c src/platform/android_audio.c)
+    add_library(ftlport SHARED ${CORE_SOURCES} src/platform/plat_android.c src/platform/android_audio.c
+        src/platform/log_android.c)
     target_include_directories(ftlport PRIVATE include src)
     target_compile_options(ftlport PRIVATE ${COMMON_FLAGS} -O2 -g)
     target_link_options(ftlport PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,-z,max-page-size=16384

@@ -7,3 +7,4 @@ bool ux_in_main_menu(void);
 void ux_handle_key(int android_keycode, bool down);
 void ux_handle_mouse(int action, float sx, float sy, float wheel);
 void ux_reset_zoom(bool animate);
+void ux_haptic(int kind);  // 1 magnifier shown, 2 pause toggled (if vibration is on)
