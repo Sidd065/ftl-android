@@ -54,7 +54,8 @@ public class ModsActivity extends Activity {
         title.setPadding(0, dp(8), 0, dp(4));
         col.addView(title);
         TextView about = new TextView(this);
-        about.setText(R.string.mods_about);
+        about.setText(getString(R.string.mods_about) + "\n\n" + getString(
+                SettingsActivity.hyperspaceLib(this) != null ? R.string.mods_about_hs : R.string.mods_about_no_hs));
         about.setTextSize(14);
         about.setTextColor(0xFF90A4AE);
         about.setLineSpacing(0, 1.15f);

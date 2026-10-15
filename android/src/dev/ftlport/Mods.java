@@ -209,7 +209,8 @@ final class Mods {
         }
     }
 
-    // Opens a zip that should be a mod, refusing mods made for Hyperspace.
+    // Opens a zip that should be a mod, refusing mods made for Hyperspace unless this
+    // build carries it (Settings then has the switch that loads it).
     private static ZipFile open(Context ctx, File f, String name) throws IOException {
         ZipFile z;
         try {
@@ -217,7 +218,7 @@ final class Mods {
         } catch (IOException e) {
             throw new IOException(ctx.getString(R.string.mods_not_a_mod, name));
         }
-        if (needsHyperspace(z)) {
+        if (needsHyperspace(z) && SettingsActivity.hyperspaceLib(ctx) == null) {
             z.close();
             throw new HyperspaceException(ctx.getString(R.string.mods_hyperspace, name));
         }
