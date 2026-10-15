@@ -9,6 +9,8 @@ typedef struct {
     const char *hw_machine;   // reported sysctl hw.machine
     int verbose;
     const char *mods_index;   // overlay of modded files (see ux/mods.c), or NULL
+    const char *hyperspace;   // libHyperspace.so to start before the game (see hyperspace.c), or NULL
+    const char *log_dir;      // where the session logs go (Hyperspace's logs go there too)
 } port_config;
 
 int port_run_game(const port_config *cfg);   // never returns on success (UIApplicationMain)

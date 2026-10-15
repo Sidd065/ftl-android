@@ -28,6 +28,7 @@ Optional build variables:
   Without it the app gets a plain icon, so the repo itself has no game art.
 - `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
   can reach the save files.
+- `HYPERSPACE_SO=/path/to/libHyperspace.so` adds Hyperspace (see below).
 
 ## Installing from a computer
 
@@ -87,7 +88,23 @@ ftlman reads mod text files as UTF-8, while Slipstream also accepts Windows-1252
 which some older mods were saved in. The app converts such files to UTF-8
 before running ftlman, so those mods install as they do with Slipstream.
 
-Mods for Hyperspace can't work: Hyperspace patches the PC game's code.
+Mods for Hyperspace can't work yet: Hyperspace patches the game's code, and its
+Android build is still being written (see below).
+
+## Hyperspace
+
+[Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) extends FTL by
+hooking the game's functions in memory; big mods like Multiverse need it. A
+work-in-progress Android build lives on the `android-arm64` branch of
+github.com/Sidd065/FTL-Hyperspace (`buildscripts/android/` there explains how
+to build it and what works). An APK built with `HYPERSPACE_SO` carries it as
+`libHyperspace.so`, and Settings gets a "Hyperspace (experimental)" switch,
+off by default. When it's on, `hyperspace.c` loads the library once the game
+is mapped, linked and protected, before any game code runs, and calls its
+`hs_android_init` with where the game is (`hyperspace_host.h`, shared with
+Hyperspace). Its logs (zhl.log, FTL_HS.log) go to the log folder with the
+session logs. If it fails to start, the app says why and doesn't start the
+game.
 
 ## Testing
 

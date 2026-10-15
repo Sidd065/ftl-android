@@ -23,6 +23,7 @@ set(CORE_SOURCES
     src/fw/audio_misc.c
     src/port_main.c
     src/patches.c
+    src/hyperspace.c
     src/ux/ux.c
     src/ux/overlay.c
     src/ux/mods.c

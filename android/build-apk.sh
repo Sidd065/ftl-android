@@ -6,6 +6,8 @@
 #   DEBUGGABLE=1 ./build-apk.sh   -> marks the APK debuggable (adb run-as can reach saves; code stays optimized)
 #     (taken from your copy at build time; never stored in the repo or the default APK)
 # ftlman, which installs mods, is built separately with ftlman/build.sh (FTLMAN=path to override).
+#   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> also carries Hyperspace, which a
+#     setting (off by default) loads; built from github.com/Sidd065/FTL-Hyperspace (android-arm64)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
@@ -41,6 +43,12 @@ mkdir -p "$WORK/lib/arm64-v8a"
 cp "$FTLMAN" "$WORK/lib/arm64-v8a/libftlman.so"
 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-debug -o "$WORK/lib/arm64-v8a/libftlport.so" \
   "$NATIVE_BUILD/libftlport.so"
+LIBS=(lib/arm64-v8a/libftlman.so)
+if [ -n "${HYPERSPACE_SO:-}" ]; then
+  "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-debug -o "$WORK/lib/arm64-v8a/libHyperspace.so" \
+    "$HYPERSPACE_SO"
+  LIBS+=(lib/arm64-v8a/libHyperspace.so)
+fi
 
 echo "== resources"
 "$BT/aapt2" compile --dir "$HERE/res" -o "$WORK/res.zip"
@@ -64,7 +72,7 @@ javac --release 17 -nowarn -cp "$PLATFORM" -d "$WORK/classes" \
 
 echo "== package"
 cp "$WORK/base.apk" "$WORK/unaligned.apk"
-(cd "$WORK" && zip -q -X "$WORK/unaligned.apk" classes.dex lib/arm64-v8a/libftlman.so \
+(cd "$WORK" && zip -q -X "$WORK/unaligned.apk" classes.dex "${LIBS[@]}" \
   && zip -q -X -0 "$WORK/unaligned.apk" lib/arm64-v8a/libftlport.so)
 "$BT/zipalign" -P 16 -f 4 "$WORK/unaligned.apk" "$WORK/aligned.apk"
 if [ ! -f "$KEYSTORE" ]; then

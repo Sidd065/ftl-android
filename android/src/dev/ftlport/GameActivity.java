@@ -51,7 +51,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
 
     // ---- native ----
     private native void nativeStart(String bin, String bundle, String docs, String cache, String logs, String mods,
-                                    int sw, int sh, int refresh, float[] layout);
+                                    String hyperspace, int sw, int sh, int refresh, float[] layout);
     private native void nativeAttach();
     private native void nativeSurfaceChanged(Surface s, int w, int h);
     private native void nativeSurfaceDestroyed();
@@ -374,13 +374,16 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             boolean crashed = Logs.crashedLastTime(this);
             Logs.clearCrashFlag(this);
             File mods = Mods.activeIndex(this);
+            SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
+            File hyperspace = SettingsActivity.hyperspaceLib(this);
+            boolean useHyperspace = hyperspace != null && prefs.getBoolean(SettingsActivity.K_HYPERSPACE, false);
             nativeStart(new File(game, "FTL").getPath(), game.getPath(), docs.getPath(), cache.getPath(),
-                    logs.getPath(), mods != null ? mods.getPath() : "", w, h, refreshRate(), computeLayout(w, h));
+                    logs.getPath(), mods != null ? mods.getPath() : "", useHyperspace ? hyperspace.getPath() : "",
+                    w, h, refreshRate(), computeLayout(w, h));
             pushOptions();
             // After a crash, or once the mods changed, start at the title screen: the
             // saved run may be what crashed, or may not load with the new mods.
             boolean modsChanged = Mods.takeChanged(this);
-            SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
             nativeSetOption("resume_run",
                     !crashed && !modsChanged && prefs.getBoolean(SettingsActivity.K_RESUME, false) ? 1 : 0);
             scanPads();

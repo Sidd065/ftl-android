@@ -73,6 +73,8 @@
     <string name="set_mods">Mods</string>
     <string name="set_mods_desc">Mods made for FTL 1.6 on PC can change ships, events, weapons and more.</string>
     <string name="set_mods_button">Mods…</string>
+    <string name="set_hyperspace">Hyperspace (experimental)</string>
+    <string name="set_hyperspace_desc">Load Hyperspace, which mods like Multiverse are built on. Unfinished: most of it doesn\'t work yet and it may crash. Takes effect the next time the game starts.</string>
     <string name="mods_title">Mods</string>
     <string name="mods_about">Add mods made for FTL 1.6 on PC: the .ftl or .zip files used with ftlman or Slipstream. You can also open a downloaded mod with FTL. Tick the ones you want, put them in order (later ones win when two change the same thing), then apply. FTL restarts with them.\n\nMods that need Hyperspace, like Multiverse, can\'t work here yet.</string>
     <string name="mods_none">No mods added yet.</string>

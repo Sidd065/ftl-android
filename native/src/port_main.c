@@ -11,6 +11,7 @@
 
 #include "darwin/libsystem.h"
 #include "fw/fw.h"
+#include "hyperspace.h"
 #include "loader/macho.h"
 #include "loader/symbols.h"
 #include "objc/objc.h"
@@ -88,6 +89,15 @@ int port_run_game(const port_config *cfg) {
     if (patches_apply(&g_img) != 0) LOGW("some patches failed to apply (unexpected game build?)");
     mo_protect(&g_img);
     rt_register_image_objc(&g_img);
+
+    if (cfg->hyperspace) {
+        char err[1200];
+        if (hyperspace_start(cfg->hyperspace, cfg->log_dir, cfg->docs_dir, &g_img, err, sizeof err) != 0) {
+            LOGE("%s", err);
+            port_report_fatal(err);
+            return 1;
+        }
+    }
 
     static const char *argv[] = {"FTL", NULL};
     static const char *envp[] = {"HOME=/", NULL};

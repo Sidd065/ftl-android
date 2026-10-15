@@ -304,11 +304,12 @@ static void *watchdog_thread(void *p) {
 // ---------------------------------------------------------------------------
 // JNI entry points
 typedef struct {
-    char bin[512], bundle[512], docs[512], cache[512], mods[512];
+    char bin[512], bundle[512], docs[512], cache[512], mods[512], hyperspace[512], logs[512];
 } start_args;
 static void *game_main_thread(void *p) {
     start_args *a = p;
-    port_config cfg = {a->bin, a->bundle, a->docs, a->cache, "iPad8,1", 0, a->mods[0] ? a->mods : NULL};
+    port_config cfg = {a->bin, a->bundle, a->docs, a->cache, "iPad8,1", 0, a->mods[0] ? a->mods : NULL,
+                       a->hyperspace[0] ? a->hyperspace : NULL, a->logs};
     port_install_crash_handler();
     int r = port_run_game(&cfg);
     LOGE("port_run_game returned %d", r);
@@ -324,19 +325,21 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 #define JNIFN(name) Java_dev_ftlport_GameActivity_##name
 
 JNIEXPORT void JNICALL JNIFN(nativeStart)(JNIEnv *env, jobject thiz, jstring bin, jstring bundle, jstring docs,
-                                          jstring cache, jstring logs, jstring mods, jint sw, jint sh,
-                                          jint refresh, jfloatArray layout) {
+                                          jstring cache, jstring logs, jstring mods, jstring hyperspace, jint sw,
+                                          jint sh, jint refresh, jfloatArray layout) {
+    start_args *a = calloc(1, sizeof(*a));
     const char *s = (*env)->GetStringUTFChars(env, logs, NULL);
     port_log_open(s);
+    strncpy(a->logs, s, 511);
     (*env)->ReleaseStringUTFChars(env, logs, s);
     g_activity = (*env)->NewGlobalRef(env, thiz);
     g_activity_cls = (*env)->NewGlobalRef(env, (*env)->GetObjectClass(env, thiz));
-    start_args *a = calloc(1, sizeof(*a));
     s = (*env)->GetStringUTFChars(env, bin, NULL); strncpy(a->bin, s, 511); (*env)->ReleaseStringUTFChars(env, bin, s);
     s = (*env)->GetStringUTFChars(env, bundle, NULL); strncpy(a->bundle, s, 511); (*env)->ReleaseStringUTFChars(env, bundle, s);
     s = (*env)->GetStringUTFChars(env, docs, NULL); strncpy(a->docs, s, 511); (*env)->ReleaseStringUTFChars(env, docs, s);
     s = (*env)->GetStringUTFChars(env, cache, NULL); strncpy(a->cache, s, 511); (*env)->ReleaseStringUTFChars(env, cache, s);
     s = (*env)->GetStringUTFChars(env, mods, NULL); strncpy(a->mods, s, 511); (*env)->ReleaseStringUTFChars(env, mods, s);
+    s = (*env)->GetStringUTFChars(env, hyperspace, NULL); strncpy(a->hyperspace, s, 511); (*env)->ReleaseStringUTFChars(env, hyperspace, s);
     float lay[8] = {0};
     jsize n = (*env)->GetArrayLength(env, layout);
     (*env)->GetFloatArrayRegion(env, layout, 0, n < 8 ? n : 8, lay);

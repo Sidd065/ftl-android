@@ -40,6 +40,7 @@ public class SettingsActivity extends Activity {
     static final String K_WINDOW_ZOOM = "window_zoom";      // int: 0 automatic, 1 always, 2 off
     static final String K_EVENT_ZOOM = "event_zoom";        // boolean
     static final String K_RESUME = "resume_run";            // boolean
+    static final String K_HYPERSPACE = "hyperspace";        // boolean
 
     private static final int REQ_EXPORT = 1, REQ_IMPORT = 2, REQ_LOGS = 3;
 
@@ -111,6 +112,9 @@ public class SettingsActivity extends Activity {
         section(R.string.set_mods);
         mModsDesc = text(R.string.set_mods_desc, 14, 0xFF90A4AE);
         button(R.string.set_mods_button, v -> startActivity(new Intent(this, ModsActivity.class)));
+        if (hyperspaceLib(this) != null)
+            toggle(R.string.set_hyperspace, R.string.set_hyperspace_desc, mPrefs.getBoolean(K_HYPERSPACE, false),
+                    v -> mPrefs.edit().putBoolean(K_HYPERSPACE, v).apply());
 
         section(R.string.set_files);
         text(R.string.set_files_desc, 14, 0xFF90A4AE);
@@ -134,6 +138,12 @@ public class SettingsActivity extends Activity {
         int mods = Mods.applied(this).size();
         mModsDesc.setText(mods > 0 ? getResources().getQuantityString(R.plurals.mods_status_on, mods, mods)
                 : getString(R.string.set_mods_desc));
+    }
+
+    // Only builds made with Hyperspace (android/build-apk.sh HYPERSPACE_SO=...) carry it.
+    static File hyperspaceLib(android.content.Context ctx) {
+        File f = new File(ctx.getApplicationInfo().nativeLibraryDir, "libHyperspace.so");
+        return f.isFile() ? f : null;
     }
 
     private void section(int title) {
