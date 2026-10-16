@@ -342,6 +342,14 @@ void ux_configure(int sw, int sh, int refresh_hz, const float *layout) {
         area_h = sh;
         l = t = 0;
     }
+    // The game's HUD is 1024 units wide, so on screens narrower than 4:3 (foldables
+    // opened up) the canvas would cut off its sides: use a 4:3 area, centred, with
+    // bars above and below.
+    if ((long)area_w * 3 < (long)area_h * 4) {
+        int h = area_w * 3 / 4;
+        t += (area_h - h) / 2;
+        area_h = h;
+    }
     // The game lays out a canvas 768 units tall (width follows the aspect
     // ratio). Render at 2x for typical phones/tablets so text stays crisp when
     // downscaled and zoomed; 1x for small surfaces.

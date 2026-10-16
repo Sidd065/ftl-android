@@ -36,7 +36,7 @@ game on the phone. Or let the script do both: it installs the APK and copies
 `FTL` and `ftl.dat` into the app's folder, and the app imports them when it
 starts.
 
-    APK=ftl-android-0.3.1.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
+    APK=ftl-android-0.3.2.apk tools/install-to-phone.sh /path/to/FTL_1.6.21_ios_8.0
 
 ## How it works
 
