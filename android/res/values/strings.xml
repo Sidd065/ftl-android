@@ -67,6 +67,7 @@
     <string name="saves_item_run_plain">• a run in progress</string>
     <string name="saves_item_profile">• a profile: unlocks, achievements and scores</string>
     <string name="saves_item_settings">• game settings</string>
+    <string name="saves_item_mods">" (mods: %1$s)"</string>
     <string name="saves_replace">Replace and restart</string>
     <string name="saves_undo_confirm">Put back the saves you had before the last import, or the run you set aside when changing mods? FTL restarts afterwards.</string>
     <string name="saves_undo_yes">Restore and restart</string>

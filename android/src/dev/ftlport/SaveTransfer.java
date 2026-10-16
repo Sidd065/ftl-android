@@ -29,8 +29,11 @@ import java.util.zip.ZipOutputStream;
 /**
  * Moves saves in and out of the app. The game keeps them in files/Documents:
  * continue.sav (the run in progress), prof.sav (unlocks, achievements and
- * scores) and settings.ini. Export zips them; import takes such a zip or the
- * files on their own, and backs up whatever it replaces.
+ * scores) and settings.ini. With Hyperspace, each mod has a run and a profile
+ * of its own there, hs_<mod>_continue.sav and hs_<mod>_prof.sav (hs_continue.sav
+ * and hs_prof.sav for mods without a name), with a hs_<mod>_version.sav. Export
+ * zips them all; import takes such a zip or the files on their own, and backs up
+ * whatever it replaces.
  */
 final class SaveTransfer {
     static final String RUN = "continue.sav", PROFILE = "prof.sav", SETTINGS = "settings.ini",
@@ -58,9 +61,30 @@ final class SaveTransfer {
         return "FTL saves " + stamp() + ".zip";
     }
 
+    // Hyperspace's saves for a mod (see above)
+    private static boolean isModSave(String name) {
+        return name.startsWith("hs_") && name.endsWith(".sav");
+    }
+
+    private static boolean isRun(String name) {
+        return name.equals(RUN) || (isModSave(name) && name.endsWith("_continue.sav"));
+    }
+
+    // The save files there are now: the game's, then Hyperspace's
+    private static List<String> names(Context ctx) {
+        List<String> out = new ArrayList<>(FILES);
+        String[] all = docsDir(ctx).list();
+        if (all != null) {
+            Arrays.sort(all);
+            for (String n : all)
+                if (isModSave(n)) out.add(n);
+        }
+        return out;
+    }
+
     private static List<File> present(Context ctx) {
         List<File> out = new ArrayList<>();
-        for (String n : FILES) {
+        for (String n : names(ctx)) {
             File f = new File(docsDir(ctx), n);
             if (f.isFile() && f.length() > 0) out.add(f);
         }
@@ -140,6 +164,12 @@ final class SaveTransfer {
         if (n.endsWith(".ini")) return n.startsWith("settings") ? SETTINGS : null;
         if (!n.endsWith(".sav")) return null;
         int format = data.length >= 4 ? le32(data, 0) : -1;
+        if (isModSave(name) && name.matches("[A-Za-z0-9_.-]+")) {
+            // Hyperspace's own name says which mod and which save it is
+            if (name.endsWith("_continue.sav") && format != RUN_FORMAT) throw new IOException(ctx.getString(R.string.saves_bad_format, name));
+            if (name.endsWith("_prof.sav") && format != PROFILE_FORMAT) throw new IOException(ctx.getString(R.string.saves_bad_format, name));
+            return name;
+        }
         if (format == RUN_FORMAT) return RUN;
         if (format == PROFILE_FORMAT) return PROFILE;
         throw new IOException(ctx.getString(R.string.saves_bad_format, name));
@@ -150,21 +180,29 @@ final class SaveTransfer {
         StringBuilder sb = new StringBuilder();
         for (String n : files.keySet()) {
             String line;
-            if (n.equals(RUN)) {
+            if (isRun(n)) {
                 String[] ship = runSummary(files.get(n));
                 line = ship != null ? ctx.getString(R.string.saves_item_run, ship[0], Integer.parseInt(ship[1]))
                         : ctx.getString(R.string.saves_item_run_plain);
-            } else if (n.equals(PROFILE)) {
+            } else if (n.equals(PROFILE) || (isModSave(n) && n.endsWith("_prof.sav"))) {
                 line = ctx.getString(R.string.saves_item_profile);
             } else if (n.equals(SETTINGS)) {
                 line = ctx.getString(R.string.saves_item_settings);
             } else {
                 continue;
             }
+            if (isModSave(n)) line += ctx.getString(R.string.saves_item_mods, modName(n));
             if (sb.length() > 0) sb.append('\n');
             sb.append(line);
         }
         return sb.toString();
+    }
+
+    // The mod a Hyperspace run or profile belongs to: hs_mv_continue.sav -> mv. Mods that
+    // don't name one share hs_continue.sav and hs_prof.sav.
+    private static String modName(String n) {
+        int end = n.lastIndexOf(n.endsWith("_continue.sav") ? "_continue.sav" : "_prof.sav");
+        return end > 3 ? n.substring(3, end) : "Hyperspace";
     }
 
     // Ship name and sector from the start of a continue.sav: format, three
@@ -195,14 +233,19 @@ final class SaveTransfer {
     }
 
     static boolean hasRun(Context ctx) {
-        return new File(docsDir(ctx), RUN).length() > 0;
+        for (String n : names(ctx))
+            if (isRun(n) && new File(docsDir(ctx), n).length() > 0) return true;
+        return false;
     }
 
-    /** Moves the run in progress out of the game's way. "Restore earlier saves" brings it back. */
+    /** Moves the runs in progress out of the game's way. "Restore earlier saves" brings them back. */
     static void setRunAside(Context ctx) throws IOException {
         if (!hasRun(ctx)) return;
         backUp(ctx);
-        if (!new File(docsDir(ctx), RUN).delete()) throw new IOException("Couldn't set the run aside");
+        for (String n : names(ctx)) {
+            File f = new File(docsDir(ctx), n);
+            if (isRun(n) && f.exists() && !f.delete()) throw new IOException("Couldn't set the run aside");
+        }
     }
 
     private static void backUp(Context ctx) throws IOException {
@@ -240,9 +283,13 @@ final class SaveTransfer {
         try (ZipInputStream zip = new ZipInputStream(new FileInputStream(last))) {
             ZipEntry e;
             while ((e = zip.getNextEntry()) != null)
-                if (FILES.contains(e.getName())) files.put(e.getName(), readAll(zip, MAX_FILE));
+                if (FILES.contains(e.getName()) || isModSave(e.getName())) files.put(e.getName(), readAll(zip, MAX_FILE));
         }
         File docs = docsDir(ctx);
+        // Hyperspace's saves come back as they were; ones made since stay (backups from before
+        // the app kept them don't have them)
+        for (Map.Entry<String, byte[]> e : files.entrySet())
+            if (isModSave(e.getKey())) write(new File(docs, e.getKey()), e.getValue());
         for (String n : FILES) {
             File f = new File(docs, n);
             if (files.containsKey(n)) write(f, files.get(n));
