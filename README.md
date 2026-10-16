@@ -74,7 +74,53 @@ These were tested in an emulator: each one installs and starts a run.
 | [Better info](https://subsetgames.com/forum/viewtopic.php?t=38336) | Exact numbers in tooltips |
 | [Extended Pursuit Indicator](https://subsetgames.com/forum/viewtopic.php?t=26289) | Shows the rebel fleet further ahead on the map |
 
-Mods that need Hyperspace, such as Multiverse, can't work yet.
+Mods that need Hyperspace, such as Multiverse, work with the Hyperspace build
+below.
+
+## Hyperspace (experimental)
+
+Big mods like Multiverse are built on
+[Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace), which changes
+the game's code as well as its data. The build from this branch carries it:
+get the `.apk` from the
+[0.3.2 with Hyperspace](https://github.com/Sidd065/ftl-android/releases/tag/v0.3.2-hyperspace)
+pre-release and install it over 0.3.2. Your saves are kept.
+
+1. In settings, turn on **Hyperspace (experimental)**.
+2. Add `Hyperspace.ftl` and your mods on the Mods screen. `Hyperspace.ftl` is
+   inside any of the
+   [Hyperspace 1.23.2](https://github.com/FTL-Hyperspace/FTL-Hyperspace/releases/tag/v1.23.2)
+   downloads.
+3. Put them in the order below, tick them, then tap **Apply and restart**.
+
+These were played on a phone, from the hangar through events, stores and
+fights (all the Multiverse addons at once only through the first few events).
+Load orders, top to bottom:
+
+- [Multiverse](https://github.com/FTL-Multiverse-Team/FTL-Multiverse-Releases/releases)
+  5.5.1: `Hyperspace.ftl`, Multiverse Assets, Multiverse Data.
+- Multiverse addons go after Multiverse Data, in this order (leave out any you
+  don't want): Fusion, The Renegade Collection, Forgotten Races (Assets part 1,
+  Assets part 2, then Data), The Outer Expansion (Assets, then Data), Darkest
+  Desire, Trash Compactor Collection, Forgemaster, Fishier Than Light, and Lily's
+  Innovations last. Forgotten Races needs Fusion and The Renegade Collection;
+  Forgemaster needs Fusion. The English builds are on
+  [ftl-mv-translation](https://github.com/ftl-mv-translation).
+- [Arsenal+](https://github.com/ftl-mv-translation/arsenal-plus) 1.36, the
+  English build: `Hyperspace.ftl`, Arsenal+.
+- [Insurrection+](https://subsetgames.com/forum/viewtopic.php?t=37167):
+  `Hyperspace.ftl`, Insurrection+, then its Augmented Weapons and Named Weapons
+  modules if you want them. It comes as a `.rar`; take the `.ftl` files out of
+  it first.
+
+## Known gaps
+
+- Mods can't get right-clicks or key presses. So Fusion's augment boxes and
+  Insurrection+'s enemy evasion display can't be dragged, and mod hotkeys do
+  nothing.
+- Multiverse's speed controls sit over the JUMP button's label. Both still work
+  by touch, but while the FTL drive is ready, tapping a speed control also
+  opens the map.
 
 ## Problems
 

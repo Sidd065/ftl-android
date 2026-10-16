@@ -7,7 +7,7 @@
 #     (taken from your copy at build time; never stored in the repo or the default APK)
 # ftlman, which installs mods, is built separately with ftlman/build.sh (FTLMAN=path to override).
 #   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> also carries Hyperspace, which a
-#     setting (off by default) loads; built from github.com/Sidd065/FTL-Hyperspace (android-arm64)
+#     setting (off by default) loads; built from FTL-Hyperspace's android-arm64 branch
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
