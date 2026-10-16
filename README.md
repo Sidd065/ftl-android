@@ -93,8 +93,13 @@ pre-release and install it over 0.3.2. Your saves are kept.
    downloads.
 3. Put them in the order below, tick them, then tap **Apply and restart**.
 
+Mods that name their saves, like Multiverse, keep their own run and profile
+(unlocks, achievements, scores), so they don't mix with the plain game's. Export
+saves in settings takes them along.
+
 These were played on a phone, from the hangar through events, stores and
 fights (all the Multiverse addons at once only through the first few events).
+Multiverse was also played for several hours on an emulator.
 Load orders, top to bottom:
 
 - [Multiverse](https://github.com/FTL-Multiverse-Team/FTL-Multiverse-Releases/releases)
@@ -119,8 +124,7 @@ Load orders, top to bottom:
   Insurrection+'s enemy evasion display can't be dragged, and mod hotkeys do
   nothing.
 - Multiverse's speed controls sit over the JUMP button's label. Both still work
-  by touch, but while the FTL drive is ready, tapping a speed control also
-  opens the map.
+  by touch.
 
 ## Problems
 
