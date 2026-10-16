@@ -371,6 +371,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             docs.mkdirs();
             //noinspection ResultOfMethodCallIgnored
             cache.mkdirs();
+            OldSaves.repair(this);
             boolean crashed = Logs.crashedLastTime(this);
             Logs.clearCrashFlag(this);
             File mods = Mods.activeIndex(this);
