@@ -33,9 +33,12 @@ static int is_pc_relative(uint32_t ins) {
     return 0;
 }
 
+// x17, not x16: Hyperspace hooks some of the same functions after us. It moves our first
+// instruction (this load) elsewhere and goes back to the second with a jump through x16,
+// so the branch here has to use a register that jump leaves alone.
 static void write_abs_jump(uint32_t *p, void *target) {
-    p[0] = 0x58000050;  // ldr x16, #8
-    p[1] = 0xD61F0200;  // br x16
+    p[0] = 0x58000051;  // ldr x17, #8
+    p[1] = 0xD61F0220;  // br x17
     memcpy(&p[2], &target, 8);
 }
 
