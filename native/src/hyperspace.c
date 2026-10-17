@@ -14,6 +14,9 @@
 int __ftl_find_macho_unwind(uintptr_t pc, uintptr_t *mh, uintptr_t *textlen, uintptr_t *cu, size_t *culen,
                             uintptr_t *eh, size_t *ehlen);
 
+static hs_android_wants_right_click_fn g_wants_right_click;
+static hs_android_right_button_fn g_right_button;
+
 static void hs_log(int level, const char *msg) {
     if (level >= 2) LOGE("%s", msg);
     else if (level == 1) LOGW("%s", msg);
@@ -49,6 +52,16 @@ int hyperspace_start(const char *lib, const char *log_dir, const char *data_dir,
         snprintf(err, errsize, "Hyperspace couldn't start: %s", why[0] ? why : "unknown error (see zhl.log)");
         return -1;
     }
+    g_wants_right_click = (hs_android_wants_right_click_fn)dlsym(h, "hs_android_wants_right_click");
+    g_right_button = (hs_android_right_button_fn)dlsym(h, "hs_android_right_button");
     LOGI("hyperspace: started");
     return 0;
+}
+
+bool hyperspace_wants_right_click(void) {
+    return g_wants_right_click && g_right_button && g_wants_right_click();
+}
+
+void hyperspace_right_button(int action, double x, double y) {
+    if (g_right_button) g_right_button(action, (int)x, (int)y);
 }

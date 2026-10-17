@@ -1,7 +1,8 @@
 // Phone UX layer for the FTL iPad build:
 //  - screen layout / render resolution (render at a multiple of 768 px tall)
 //  - zoomable view (pinch to zoom, two-finger pan) presented by present.c
-//  - gestures: two-finger tap toggles pause; single touches go to the game
+//  - gestures: two-finger tap toggles pause; one finger held and a tap with another
+//    is a right click for mods that listen for one; single touches go to the game
 //  - Android Back -> Escape; hardware keyboard + mouse -> the game's own
 //    (desktop-heritage) key and mouse events
 //  - the beacon map and the upgrade screen zoomed in on phones (events too, as
@@ -17,6 +18,8 @@
 
 #include "../fw/fw.h"
 #include "../fw/present.h"
+#include "../hyperspace.h"
+#include "../hyperspace_host.h"
 #include "../loader/macho.h"
 #include "../patches.h"
 #include "../platform/platform.h"
@@ -386,8 +389,9 @@ typedef struct {
     bool to_game;      // forwarded to the game (and not cancelled)
 } ptr_t;
 static ptr_t P[MAXP];
-static enum { G_IDLE, G_SINGLE, G_GESTURE } g_mode;
+static enum { G_IDLE, G_SINGLE, G_GESTURE, G_RIGHT } g_mode;
 static int g_ga = -1, g_gb = -1;          // pointer slots used by the gesture
+static int g_ra = -1, g_rb = -1;          // right click: the held finger, the one pressing the button
 static double g_d0, g_z0, g_ax, g_ay;    // initial finger distance, zoom, anchor (game px)
 static double g_gt0, g_gmove;            // gesture start time, max finger travel (px)
 static bool g_minimap_press;
@@ -463,6 +467,36 @@ static void gesture_end(void) {
     g_ga = g_gb = -1;
 }
 
+// Right clicks for mods (Hyperspace's scripts; the game itself has no use for them on the
+// iPad layout): a finger held still, then a tap with another, clicks where the held finger
+// is. Keeping the second finger down while moving the first drags. Only while a script
+// listens for the right button; otherwise the second finger pinches or pauses as usual.
+#define RIGHT_HOLD_S 0.25  // held at least this long; two-finger taps land closer together
+
+static bool right_click_wanted(int held, double t) {
+    ptr_t *p = &P[held];
+    return p->to_game && t - p->t0 >= RIGHT_HOLD_S && hypot(p->sx - p->x0, p->sy - p->y0) < g_dpi / 6.0 &&
+           hyperspace_wants_right_click();
+}
+static void right_button(int action) {
+    double gx, gy;
+    surface_to_game(P[g_ra].sx, P[g_ra].sy, &gx, &gy);
+    hyperspace_right_button(action, gx, gy);
+}
+static void right_press(int held, int presser, double t) {
+    if (P[held].to_game) {
+        forward(TOUCH_CANCELLED, &P[held], t);  // the held finger stops being a touch
+        P[held].to_game = false;
+        overlay_loupe_touch(0, 0, 0);
+    }
+    g_mode = G_RIGHT;
+    g_ra = held;
+    g_rb = presser;
+    right_button(HS_RIGHT_BUTTON_DOWN);
+    ux_haptic(3);
+    LOGI("ux: right click (finger held %.0f ms)", (t - P[held].t0) * 1000);
+}
+
 void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
     if (phase == TOUCH_BEGAN) {
         cursor_hide();
@@ -481,11 +515,18 @@ void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
             P[s].to_game = true;
             forward(TOUCH_BEGAN, &P[s], t);
             overlay_loupe_touch(1, sx, sy);
+        } else if (g_mode == G_RIGHT) {
+            // the first finger still down, the button up: another right click
+            if (g_rb < 0 && g_ra >= 0) right_press(g_ra, s, t);
         } else if (g_mode != G_GESTURE) {
             // second finger: take over as a pinch/pan gesture
             int other = -1;
             for (int i = 0; i < MAXP; i++)
                 if (P[i].active && i != s) other = i;
+            if (other >= 0 && n == 2 && right_click_wanted(other, t)) {
+                right_press(other, s, t);
+                return;
+            }
             if (other >= 0 && P[other].to_game) {
                 forward(TOUCH_CANCELLED, &P[other], t);
                 P[other].to_game = false;
@@ -500,6 +541,20 @@ void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
     if (s < 0) return;
     P[s].sx = sx;
     P[s].sy = sy;
+    if (g_mode == G_RIGHT) {
+        if (phase == TOUCH_MOVED) {
+            if (s == g_ra && g_rb >= 0) right_button(HS_RIGHT_BUTTON_MOVE);  // dragging
+            return;
+        }
+        if (g_rb >= 0 && (s == g_ra || s == g_rb)) {
+            right_button(HS_RIGHT_BUTTON_UP);
+            g_rb = -1;
+        }
+        if (s == g_ra) g_ra = -1;
+        P[s].active = false;
+        if (active_count() == 0) g_mode = G_IDLE;
+        return;
+    }
     if (phase == TOUCH_MOVED) {
         if (g_mode == G_GESTURE && (s == g_ga || s == g_gb)) gesture_update();
         else if (P[s].to_game) {
@@ -631,6 +686,13 @@ static void synth_touch(int phase, double sx, double sy) {
     fw_dispatch_touch(phase, SYNTH_TOUCH_ID, gx, gy, now_s());
 }
 
+static bool g_mouse_right;
+static void mouse_right(int action, double sx, double sy) {
+    double gx, gy;
+    surface_to_game(sx, sy, &gx, &gy);
+    hyperspace_right_button(action, gx, gy);
+}
+
 // action: 0 move, 1 left down, 2 left up, 3 right down, 4 right up, 5 middle down, 6 middle up, 7 wheel
 void ux_handle_mouse(int action, float sx, float sy, float wheel) {
     // Android may replay a resting pointer's hover; only real motion or a
@@ -641,10 +703,24 @@ void ux_handle_mouse(int action, float sx, float sy, float wheel) {
     last_y = sy;
     if (action != 0 || moved) cursor_hide();
     switch (action) {
-    case 0: synth_touch(TOUCH_MOVED, sx, sy); break;  // drags while the button is down
+    case 0:
+        synth_touch(TOUCH_MOVED, sx, sy);  // drags while the button is down
+        if (g_mouse_right) mouse_right(HS_RIGHT_BUTTON_MOVE, sx, sy);
+        break;
     case 1: synth_touch(TOUCH_BEGAN, sx, sy); break;
     case 2: synth_touch(TOUCH_ENDED, sx, sy); break;
-    case 3: ux_handle_back(); break;  // right button: close / back
+    case 3:  // right button: a right click for mods that listen for one, otherwise close / back
+        if (hyperspace_wants_right_click()) {
+            g_mouse_right = true;
+            mouse_right(HS_RIGHT_BUTTON_DOWN, sx, sy);
+        } else {
+            ux_handle_back();
+        }
+        break;
+    case 4:
+        if (g_mouse_right) mouse_right(HS_RIGHT_BUTTON_UP, sx, sy);
+        g_mouse_right = false;
+        break;
     case 7: if (wheel != 0) zoom_at(wheel > 0 ? 1.25 : 0.8, sx, sy); break;
     default: break;
     }

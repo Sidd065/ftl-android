@@ -35,6 +35,7 @@ To update, install the new `.apk` over the old one. Your saves are kept.
 | Hold | Magnifier: slide onto a small button, then lift |
 | Pinch, two-finger drag | Zoom and pan |
 | Two-finger tap | Pause and resume |
+| Hold one finger, tap with another | Right click where the held finger is, for mods that use one |
 | Back | Close the window or open the menu |
 
 To open and close doors, tap the door button in the bottom-left corner, then
@@ -118,11 +119,15 @@ Load orders, top to bottom:
   modules if you want them. It comes as a `.rar`; take the `.ftl` files out of
   it first.
 
+Mods that use the right mouse button get it from a gesture: hold a finger still
+on what you want to click, then tap anywhere with another finger. To drag, such
+as Fusion's augment boxes or Insurrection+'s enemy evasion display, keep the
+second finger down while you move the first, then lift it. Without such a mod,
+the second finger pinches or pauses as usual.
+
 ## Known gaps
 
-- Mods can't get right-clicks or key presses. So Fusion's augment boxes and
-  Insurrection+'s enemy evasion display can't be dragged, and mod hotkeys do
-  nothing.
+- Mods can't get key presses, so mod hotkeys do nothing.
 - Multiverse's speed controls sit over the JUMP button's label. Both still work
   by touch.
 

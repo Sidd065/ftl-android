@@ -103,7 +103,10 @@ is mapped, linked and protected, before any game code runs, and calls its
 `hs_android_init` with where the game is (`hyperspace_host.h`, shared with
 Hyperspace). Its logs (zhl.log, FTL_HS.log) go to the log folder with the
 session logs. If it fails to start, the app says why and doesn't start the
-game.
+game. For mods' right clicks, `ux.c` asks it whether a script listens for the
+right button (`hs_android_wants_right_click`) and, if so, sends it the gesture
+(one finger held, a tap with another) and a mouse's right button
+(`hs_android_right_button`).
 
 ## Testing
 

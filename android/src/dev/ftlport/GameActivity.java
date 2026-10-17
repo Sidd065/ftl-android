@@ -706,12 +706,14 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         });
     }
 
-    // Light feedback for port gestures: 1 the magnifier appeared, 2 a two-finger tap paused or resumed.
+    // Light feedback for port gestures: 1 the magnifier appeared, 2 a two-finger tap paused or resumed,
+    // 3 a right click for a mod.
     @SuppressWarnings("unused")
     void haptic(int kind) {
         mMain.post(() -> {
             if (mSurface == null) return;
             int fx = kind == 1 ? HapticFeedbackConstants.LONG_PRESS
+                    : kind == 3 ? HapticFeedbackConstants.CONTEXT_CLICK
                     : Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
             mSurface.performHapticFeedback(fx);
         });
