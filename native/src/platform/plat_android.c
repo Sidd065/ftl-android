@@ -419,6 +419,9 @@ JNIEXPORT void JNICALL JNIFN(nativeResume)(JNIEnv *env, jobject thiz) {
 }
 JNIEXPORT void JNICALL JNIFN(nativeLowMemory)(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
+    long free_mb, total_mb, game_mb;
+    port_memory(&free_mb, &total_mb, &game_mb);
+    LOGW("memory warning: %ld MB free of %ld MB, the game holds %ld MB", free_mb, total_mb, game_mb);
     q_push((pevent){.type = EV_LOWMEM});
 }
 JNIEXPORT void JNICALL JNIFN(nativeBack)(JNIEnv *env, jobject thiz) {

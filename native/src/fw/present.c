@@ -53,7 +53,10 @@ static void frame_stats(void) {
     last = now;
     frames++;
     if (now - t0 >= 30) {
-        LOGI("present: %.1f fps over %.0f s, longest frame %.0f ms", frames / (now - t0), now - t0, worst * 1000);
+        long free_mb, total_mb, game_mb;
+        port_memory(&free_mb, &total_mb, &game_mb);
+        LOGI("present: %.1f fps over %.0f s, longest frame %.0f ms; %ld MB free, the game holds %ld MB",
+             frames / (now - t0), now - t0, worst * 1000, free_mb, game_mb);
         t0 = now;
         frames = 0;
         worst = 0;

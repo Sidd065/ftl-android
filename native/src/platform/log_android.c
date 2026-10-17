@@ -62,7 +62,33 @@ void port_log_open(const char *dir) {
     __system_property_get("ro.build.version.release", release);
     char date[32];
     strftime(date, sizeof date, "%Y-%m-%d %H:%M:%S", &tm);
-    LOGI("session started %s on %s %s, Android %s", date, maker, model, release);
+    long free_mb, total_mb, game_mb;
+    port_memory(&free_mb, &total_mb, &game_mb);
+    LOGI("session started %s on %s %s, Android %s, %ld MB of memory (%ld MB free)", date, maker, model, release,
+         total_mb, free_mb);
+}
+
+// Android closes the game without a word when the device runs out of memory, so the log
+// notes how much is left: at the start, on memory warnings and with the frame rate.
+void port_memory(long *free_mb, long *total_mb, long *game_mb) {
+    long total = 0, avail = 0, rss = 0;
+    char line[128];
+    FILE *f = fopen("/proc/meminfo", "re");
+    if (f) {
+        while (fgets(line, sizeof line, f)) {
+            sscanf(line, "MemTotal: %ld", &total);
+            sscanf(line, "MemAvailable: %ld", &avail);
+        }
+        fclose(f);
+    }
+    f = fopen("/proc/self/status", "re");
+    if (f) {
+        while (fgets(line, sizeof line, f)) sscanf(line, "VmRSS: %ld", &rss);
+        fclose(f);
+    }
+    *free_mb = avail >> 10;
+    *total_mb = total >> 10;
+    *game_mb = rss >> 10;
 }
 
 void port_log(int prio, const char *fmt, ...) {
