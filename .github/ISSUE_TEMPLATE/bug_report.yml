@@ -1,0 +1,85 @@
+name: Bug report
+description: Something crashes, doesn't work, or looks wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. The app's logs help the most: they show what the game was doing and what went wrong, along with your phone's model, its Android version, the app's version and its settings. Nothing personal is in them.
+
+        **Saving the logs**
+
+        1. Long-press the FTL app icon and tap **Settings**.
+        2. Scroll down to **Troubleshooting** and tap **Save logs…**.
+        3. Pick where to save the zip, for example Downloads.
+        4. Attach the zip in the **Logs** box below: drag it in, or click the bar under the box and pick it.
+
+        If FTL closed unexpectedly, it says so the next time it starts: tap **Save logs…** there. The app keeps only its last few sessions, so save the logs soon after the problem.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what happened, and what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: The steps, if you know them, and whether it happens every time.
+      placeholder: |
+        1. Start a new game with the Kestrel
+        2. Open the map and jump to the second beacon
+        3. Tap the first answer in the event
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The zip from **Settings** > **Troubleshooting** > **Save logs…**, as described above.
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or a screen recording
+      description: >-
+        A picture often shows a problem faster than words, above all something drawn wrong, cut off or hard to tap.
+        For a screenshot, press Power and Volume down together. To record the screen, swipe down from the top and
+        tap **Screen record** in the quick settings. GitHub takes videos up to 10 MB, so keep recordings short.
+
+  - type: textarea
+    id: mods
+    attributes:
+      label: Mods
+      description: >-
+        The mods that are applied, in their order on the Mods screen (top first). Write "none" if you play without
+        mods.
+      placeholder: Hyperspace.ftl, Multiverse Assets, Multiverse Data
+    validations:
+      required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: Game controller
+      description: If it's about a controller, which one, and is it connected by USB or Bluetooth?
+      placeholder: DualSense, Bluetooth
+
+  - type: input
+    id: device
+    attributes:
+      label: Phone or tablet, Android version and app version
+      description: >-
+        Only needed if you can't attach the logs, which include them. The app's version is in Android's settings,
+        under Apps > FTL.
+      placeholder: Pixel 8, Android 15, 0.4.1
+
+  - type: textarea
+    id: saves
+    attributes:
+      label: Saves
+      description: >-
+        If the problem is tied to a run, like a save that won't load or a crash at the same point every time, attach
+        your saves too: **Settings** > **Export saves…** makes a zip of your run and profile.

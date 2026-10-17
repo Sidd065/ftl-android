@@ -165,8 +165,8 @@ the second finger pinches or pauses as usual.
 
 - "Still FairPlay-encrypted": that's the App Store copy of the game, which only
   runs on iOS.
-- Crashes: in settings, tap **Save logs…** and attach the file to an
-  [issue](https://github.com/Sidd065/ftl-android/issues).
+- Crashes and other bugs: in settings, tap **Save logs…** and attach the file to
+  a [bug report](https://github.com/Sidd065/ftl-android/issues/new/choose).
 - Only tested on Snapdragon phones so far. Game Center is off, so achievements
   stay on the phone.
 
