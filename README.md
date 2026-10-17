@@ -91,6 +91,14 @@ turn it on:
    downloads.
 3. Put them in the order below, tick them, then tap **Apply and restart**.
 
+| Multiverse: one of its 17 pages of ships | Multiverse: a fight early in a run |
+|---|---|
+| ![Multiverse's ship list](docs/mods/mv-ships.jpg) | ![A Multiverse fight](docs/mods/mv-combat.jpg) |
+| **Arsenal+: the Kestrel with its crew and weapons** | **Arsenal+: one of its pirate ships** |
+| ![The Arsenal+ hangar](docs/mods/arsenal-hangar.jpg) | ![An Arsenal+ fight](docs/mods/arsenal-combat.jpg) |
+| **Insurrection+: its title screen** | **Insurrection+: a pirate ambush** |
+| ![The Insurrection+ title screen](docs/mods/insurrection-title.jpg) | ![An Insurrection+ fight](docs/mods/insurrection-combat.jpg) |
+
 Mods that name their saves, like Multiverse, keep their own run and profile
 (unlocks, achievements, scores), so they don't mix with the plain game's. Export
 saves in settings takes them along.
@@ -141,7 +149,8 @@ the second finger pinches or pauses as usual.
 Building it yourself, and how it works: [docs/development.md](docs/development.md).
 
 FTL: Faster Than Light, including the artwork in the screenshots, is made by
-Subset Games. This project isn't affiliated with or endorsed by them.
+Subset Games; the mods in the screenshots, and their artwork, by their own
+authors (linked above). This project isn't affiliated with or endorsed by them.
 
 This project is licensed under the GNU General Public License, version 3 (see
 [LICENSE](LICENSE)). The app also includes Hyperspace (GPL version 3 or later)
