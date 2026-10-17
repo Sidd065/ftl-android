@@ -75,17 +75,14 @@ These were tested in an emulator: each one installs and starts a run.
 | [Better info](https://subsetgames.com/forum/viewtopic.php?t=38336) | Exact numbers in tooltips |
 | [Extended Pursuit Indicator](https://subsetgames.com/forum/viewtopic.php?t=26289) | Shows the rebel fleet further ahead on the map |
 
-Mods that need Hyperspace, such as Multiverse, work with the Hyperspace build
-below.
+Mods that need Hyperspace, such as Multiverse, work too: see below.
 
 ## Hyperspace (experimental)
 
 Big mods like Multiverse are built on
 [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace), which changes
-the game's code as well as its data. The build from this branch carries it:
-get the `.apk` from the
-[0.3.2 with Hyperspace](https://github.com/Sidd065/ftl-android/releases/tag/v0.3.2-hyperspace)
-pre-release and install it over 0.3.2. Your saves are kept.
+the game's code as well as its data. The app carries it, switched off until you
+turn it on:
 
 1. In settings, turn on **Hyperspace (experimental)**.
 2. Add `Hyperspace.ftl` and your mods on the Mods screen. `Hyperspace.ftl` is
@@ -127,7 +124,8 @@ the second finger pinches or pauses as usual.
 
 ## Known gaps
 
-- Mods can't get key presses, so mod hotkeys do nothing.
+- Info boxes (a weapon's or a system's details) keep the game's own bar colours
+  where Multiverse changes them.
 - Multiverse's speed controls sit over the JUMP button's label. Both still work
   by touch.
 
