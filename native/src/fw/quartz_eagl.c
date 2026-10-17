@@ -219,27 +219,154 @@ static void trace_tex(const char *fn, GLint ifmt, GLenum fmt, GLenum type, GLsiz
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     LOGI("gltrace %s tex=%d ifmt=%#x fmt=%#x type=%#x %dx%d", fn, tex, ifmt, fmt, type, w, h);
 }
+
+// A texture larger than the GPU takes (GL_MAX_TEXTURE_SIZE, 8192 on many Mali and PowerVR
+// GPUs) can't be stored and draws as a black box. Mods have animation sheets with all their
+// frames in one row, up to about 13000 pixels wide in Multiverse. Such a texture is stored
+// at a fraction of its size along the long side, and its uploads are scaled down to match.
+// The game's texture coordinates are relative, so it draws the same, a little less sharp.
+typedef struct { GLuint tex; int sx, sy; GLsizei w, h; } Shrunk;
+static Shrunk *g_shrunk;
+static size_t g_nshrunk;
+static GLint g_max_tex;
+
+static int shrink_by(GLsizei n) {
+    if (!g_max_tex) {
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &g_max_tex);
+        if (g_max_tex <= 0) g_max_tex = 2048;
+    }
+    int f = 1;
+    while ((n + f - 1) / f > g_max_tex) f++;
+    return f;
+}
+static Shrunk *shrunk_find(void) {
+    GLint tex = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    for (size_t i = 0; i < g_nshrunk; i++)
+        if (g_shrunk[i].tex == (GLuint)tex) return &g_shrunk[i];
+    return NULL;
+}
+static void shrunk_forget(void) {
+    Shrunk *s = g_nshrunk ? shrunk_find() : NULL;
+    if (s) *s = g_shrunk[--g_nshrunk];
+}
+// The bound texture gets its size (level 0): note whether it has to be stored smaller
+static Shrunk *shrunk_size(GLsizei w, GLsizei h) {
+    int sx = shrink_by(w), sy = shrink_by(h);
+    if (sx == 1 && sy == 1) {
+        shrunk_forget();
+        return NULL;
+    }
+    Shrunk *s = shrunk_find();
+    if (!s) {
+        Shrunk *more = realloc(g_shrunk, (g_nshrunk + 1) * sizeof *g_shrunk);
+        if (!more) return NULL;
+        g_shrunk = more;
+        s = &g_shrunk[g_nshrunk++];
+    }
+    GLint tex = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    *s = (Shrunk){(GLuint)tex, sx, sy, (w + sx - 1) / sx, (h + sy - 1) / sy};
+    LOGW("texture %dx%d is over the GPU's limit of %d: stored at %dx%d", w, h, g_max_tex, s->w, s->h);
+    return s;
+}
+static int channels(GLenum fmt) {
+    switch (fmt) {
+    case GL_RGBA: return 4;
+    case GL_RGB: return 3;
+    case GL_LUMINANCE_ALPHA: case GL_RG: return 2;
+    case GL_LUMINANCE: case GL_ALPHA: case GL_RED: return 1;
+    }
+    return 0;
+}
+// Upload part of a shrunk texture: each sx x sy block of pixels becomes one, its colour
+// weighted by alpha so edges don't darken
+static void shrunk_upload(const Shrunk *s, GLenum t, GLint lvl, GLint x, GLint y, GLsizei w, GLsizei h, GLenum fmt,
+                          GLenum type, const void *px) {
+    int ch = channels(fmt);
+    if (!px || type != GL_UNSIGNED_BYTE || !ch || unpack_pbo_bound()) {
+        LOGW("texture upload %dx%d (fmt %#x type %#x) can't be scaled down; left out", w, h, fmt, type);
+        return;
+    }
+    GLint align = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
+    size_t stride = ((size_t)w * ch + align - 1) / align * align;
+    GLsizei nw = (w + s->sx - 1) / s->sx, nh = (h + s->sy - 1) / s->sy;
+    uint8_t *out = malloc((size_t)nw * nh * ch);
+    if (!out) return;
+    const uint8_t *src = px;
+    for (GLsizei oy = 0; oy < nh; oy++) {
+        for (GLsizei ox = 0; ox < nw; ox++) {
+            uint32_t sum[4] = {0}, alpha = 0, n = 0;
+            for (int j = 0; j < s->sy && oy * s->sy + j < h; j++) {
+                const uint8_t *p = src + (size_t)(oy * s->sy + j) * stride + (size_t)ox * s->sx * ch;
+                for (int i = 0; i < s->sx && ox * s->sx + i < w; i++, p += ch, n++) {
+                    if (ch == 4) {
+                        for (int c = 0; c < 3; c++) sum[c] += p[c] * p[3];
+                        alpha += p[3];
+                    } else {
+                        for (int c = 0; c < ch; c++) sum[c] += p[c];
+                    }
+                }
+            }
+            uint8_t *o = out + ((size_t)oy * nw + ox) * ch;
+            if (ch == 4) {
+                for (int c = 0; c < 3; c++) o[c] = alpha ? (uint8_t)((sum[c] + alpha / 2) / alpha) : 0;
+                o[3] = (uint8_t)((alpha + n / 2) / n);
+            } else {
+                for (int c = 0; c < ch; c++) o[c] = (uint8_t)((sum[c] + n / 2) / n);
+            }
+        }
+    }
+    // Keep to the level's stored size when a piece doesn't start on a block boundary
+    GLsizei lw = s->w >> lvl > 0 ? s->w >> lvl : 1, lh = s->h >> lvl > 0 ? s->h >> lvl : 1;
+    GLint dx = x / s->sx, dy = y / s->sy;
+    GLsizei cw = dx + nw > lw ? lw - dx : nw, chh = dy + nh > lh ? lh - dy : nh;
+    if (cw > 0 && chh > 0) {
+        GLint row = 0;
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH, &row);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, nw);
+        glTexSubImage2D(t, lvl, dx, dy, cw, chh, fmt, type, out);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, row);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, align);
+    }
+    free(out);
+}
+
 static void GL_APIENTRY wrap_glTexImage2D(GLenum t, GLint lvl, GLint ifmt, GLsizei w, GLsizei h, GLint border,
                                           GLenum fmt, GLenum type, const void *px) {
     trace_tex("TexImage2D", ifmt, fmt, type, w, h);
+    void *tmp = NULL;
     if (is_bgra(fmt) || is_bgra((GLenum)ifmt)) {
-        void *tmp = (px && type == GL_UNSIGNED_BYTE && !unpack_pbo_bound()) ? swizzle_copy(px, w, h) : NULL;
-        glTexImage2D(t, lvl, GL_RGBA, w, h, border, GL_RGBA, type, tmp ? tmp : px);
-        free(tmp);
-        return;
+        tmp = (px && type == GL_UNSIGNED_BYTE && !unpack_pbo_bound()) ? swizzle_copy(px, w, h) : NULL;
+        if (tmp) px = tmp;
+        ifmt = GL_RGBA;
+        fmt = GL_RGBA;
     }
-    glTexImage2D(t, lvl, ifmt, w, h, border, fmt, type, px);
+    const Shrunk *s = t != GL_TEXTURE_2D ? NULL : lvl == 0 ? shrunk_size(w, h) : shrunk_find();
+    if (s) {
+        GLsizei sw = (w + s->sx - 1) / s->sx, sh = (h + s->sy - 1) / s->sy;
+        glTexImage2D(t, lvl, ifmt, sw, sh, border, fmt, type, NULL);
+        if (px) shrunk_upload(s, t, lvl, 0, 0, w, h, fmt, type, px);
+    } else {
+        glTexImage2D(t, lvl, ifmt, w, h, border, fmt, type, px);
+    }
+    free(tmp);
 }
 static void GL_APIENTRY wrap_glTexSubImage2D(GLenum t, GLint lvl, GLint x, GLint y, GLsizei w, GLsizei h, GLenum fmt,
                                              GLenum type, const void *px) {
     trace_tex("TexSubImage2D", 0, fmt, type, w, h);
+    void *tmp = NULL;
     if (is_bgra(fmt)) {
-        void *tmp = (px && type == GL_UNSIGNED_BYTE && !unpack_pbo_bound()) ? swizzle_copy(px, w, h) : NULL;
-        glTexSubImage2D(t, lvl, x, y, w, h, GL_RGBA, type, tmp ? tmp : px);
-        free(tmp);
-        return;
+        tmp = (px && type == GL_UNSIGNED_BYTE && !unpack_pbo_bound()) ? swizzle_copy(px, w, h) : NULL;
+        if (tmp) px = tmp;
+        fmt = GL_RGBA;
     }
-    glTexSubImage2D(t, lvl, x, y, w, h, fmt, type, px);
+    const Shrunk *s = t == GL_TEXTURE_2D && g_nshrunk ? shrunk_find() : NULL;
+    if (s) shrunk_upload(s, t, lvl, x, y, w, h, fmt, type, px);
+    else glTexSubImage2D(t, lvl, x, y, w, h, fmt, type, px);
+    free(tmp);
 }
 static void GL_APIENTRY wrap_glRenderbufferStorage(GLenum t, GLenum ifmt, GLsizei w, GLsizei h) {
     glRenderbufferStorage(t, is_bgra(ifmt) ? GL_RGBA8 : ifmt, w, h);
@@ -260,10 +387,18 @@ static int is_pvrtc(GLenum f) { return f >= 0x8C00 && f <= 0x8C03; }
 static void GL_APIENTRY wrap_glTexStorage2D_any(GLenum t, GLsizei levels, GLenum ifmt, GLsizei w, GLsizei h) {
     trace_tex("TexStorage2D", (GLint)ifmt, 0, 0, w, h);
     if (is_pvrtc(ifmt) || is_bgra(ifmt)) ifmt = GL_RGBA8;
+    const Shrunk *s = t == GL_TEXTURE_2D ? shrunk_size(w, h) : NULL;
+    if (s) {
+        GLsizei most = 1;
+        for (GLsizei n = s->w > s->h ? s->w : s->h; n > 1; n >>= 1) most++;
+        glTexStorage2D(t, levels < most ? levels : most, ifmt, s->w, s->h);
+        return;
+    }
     glTexStorage2D(t, levels, ifmt, w, h);
 }
 static void GL_APIENTRY wrap_glCompressedTexImage2D(GLenum t, GLint lvl, GLenum ifmt, GLsizei w, GLsizei h, GLint border,
                                                     GLsizei size, const void *data) {
+    if (t == GL_TEXTURE_2D && lvl == 0) shrunk_forget();
     if (is_pvrtc(ifmt)) {
         uint8_t *px = pvrtc_decode(data, (size_t)size, w, h, ifmt);
         glTexImage2D(t, lvl, GL_RGBA, w, h, border, GL_RGBA, GL_UNSIGNED_BYTE, px);
