@@ -144,3 +144,8 @@ Building it yourself, and how it works: [docs/development.md](docs/development.m
 
 FTL: Faster Than Light, including the artwork in the screenshots, is made by
 Subset Games. This project isn't affiliated with or endorsed by them.
+
+This project is licensed under the GNU General Public License, version 3 (see
+[LICENSE](LICENSE)). The app also includes Hyperspace (GPL version 3 or later)
+and ftlman (GPL version 2); their source, as built for each release, is attached
+to the release.
