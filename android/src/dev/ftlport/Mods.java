@@ -92,6 +92,32 @@ final class Mods {
         return idx.isFile() && new File(buildDir(ctx), "overlay.dat").isFile() ? idx : null;
     }
 
+    // Hyperspace's settings file, which Hyperspace.ftl puts in the game's data
+    private static final String HYPERSPACE_DATA = "data/hyperspace.xml";
+
+    /**
+     * The applied mods include Hyperspace (its data/hyperspace.xml is in the patched
+     * game), so the game loads it. Noted when mods are applied; mods applied by an
+     * older version of the app are looked at here, once.
+     */
+    static boolean hyperspaceApplied(Context ctx) {
+        if (activeIndex(ctx) == null) return false;
+        File mark = new File(buildDir(ctx), "hyperspace.txt");
+        try (BufferedReader r = new BufferedReader(new FileReader(mark))) {
+            return "1".equals(r.readLine());
+        } catch (IOException notNotedYet) {
+            // look below
+        }
+        boolean hs = false;
+        try (Pkg pkg = new Pkg(dat(ctx))) {
+            hs = pkg.has(HYPERSPACE_DATA);
+            writeAtomically(mark, (hs ? "1\n" : "0\n").getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            android.util.Log.w("FTLPort", "mods: couldn't check the applied mods for Hyperspace", e);
+        }
+        return hs;
+    }
+
     /** The applied mods, in order (empty when none). */
     static List<String> applied(Context ctx) {
         List<String> out = new ArrayList<>();
@@ -210,7 +236,7 @@ final class Mods {
     }
 
     // Opens a zip that should be a mod, refusing mods made for Hyperspace unless this
-    // build carries it (Settings then has the switch that loads it).
+    // build carries it (the game then loads it while Hyperspace.ftl is applied).
     private static ZipFile open(Context ctx, File f, String name) throws IOException {
         ZipFile z;
         try {
@@ -575,15 +601,18 @@ final class Mods {
     }
 
     // The atlas lists without the images mods replaced, so the game loads the
-    // mods' files instead of the packed originals. Goes to build.tmp.
+    // mods' files instead of the packed originals. Goes to build.tmp, with the
+    // list of applied mods and whether they include Hyperspace.
     private static void writeOverlay(Context ctx, File patched, List<Mod> on) throws IOException {
         File tmp = new File(dir(ctx), "build.tmp");
         deleteTree(tmp);
         if (!tmp.mkdirs()) throw new IOException("Couldn't create " + tmp);
+        boolean hyperspace;
         try (Pkg pkg = new Pkg(patched);
              OutputStream dat = new FileOutputStream(new File(tmp, "overlay.dat"));
              Writer idx = new OutputStreamWriter(new FileOutputStream(new File(tmp, "overlay.idx")),
                      StandardCharsets.UTF_8)) {
+            hyperspace = pkg.has(HYPERSPACE_DATA);
             Set<String> images = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
             for (String n : pkg.names("img/"))
                 if (n.toLowerCase(Locale.ROOT).endsWith(".png")) images.add(n);
@@ -623,6 +652,7 @@ final class Mods {
         StringBuilder names = new StringBuilder();
         for (Mod m : on) names.append(m.file).append('\n');
         writeAtomically(new File(tmp, "applied.txt"), names.toString().getBytes(StandardCharsets.UTF_8));
+        writeAtomically(new File(tmp, "hyperspace.txt"), (hyperspace ? "1\n" : "0\n").getBytes(StandardCharsets.UTF_8));
     }
 
     // ---------------------------------------------------------------- helpers

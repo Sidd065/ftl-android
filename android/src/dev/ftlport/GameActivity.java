@@ -393,8 +393,9 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
             Logs.clearCrashFlag(this);
             File mods = Mods.activeIndex(this);
             SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
+            // Hyperspace runs while the applied mods include it (Hyperspace.ftl)
             File hyperspace = SettingsActivity.hyperspaceLib(this);
-            boolean useHyperspace = hyperspace != null && prefs.getBoolean(SettingsActivity.K_HYPERSPACE, false);
+            boolean useHyperspace = hyperspace != null && Mods.hyperspaceApplied(this);
             nativeStart(new File(game, "FTL").getPath(), game.getPath(), docs.getPath(), cache.getPath(),
                     logs.getPath(), mods != null ? mods.getPath() : "", useHyperspace ? hyperspace.getPath() : "",
                     w, h, refreshRate(), computeLayout(w, h));

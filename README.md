@@ -106,15 +106,14 @@ Mods that need Hyperspace, such as Multiverse, work too: see below.
 
 Big mods like Multiverse are built on
 [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace), which changes
-the game's code as well as its data. The app carries it, switched off until you
-turn it on:
+the game's code as well as its data. The app carries it, and the game loads it
+while `Hyperspace.ftl` is among the applied mods:
 
-1. In settings, turn on **Hyperspace (experimental)**.
-2. Add `Hyperspace.ftl` and your mods on the Mods screen. `Hyperspace.ftl` is
+1. Add `Hyperspace.ftl` and your mods on the Mods screen. `Hyperspace.ftl` is
    inside any of the
    [Hyperspace 1.23.2](https://github.com/FTL-Hyperspace/FTL-Hyperspace/releases/tag/v1.23.2)
    downloads.
-3. Put them in the order below, tick them, then tap **Apply and restart**.
+2. Put them in the order below, tick them, then tap **Apply and restart**.
 
 | Multiverse: one of its 17 pages of ships | Multiverse: a fight early in a run |
 |---|---|
