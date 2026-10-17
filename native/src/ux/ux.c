@@ -864,9 +864,16 @@ static void resume_run_tick(void) {
     *(int32_t *)(menu + MENU_ITEM) = 9;
 }
 
+// The title screen (or the first-launch language screen) has been up: the game is past
+// loading, which with big mods can go a long while without drawing.
+static bool g_started;
+bool ux_game_started(void) { return __atomic_load_n(&g_started, __ATOMIC_RELAXED); }
+
 // Main thread, every run-loop pass: resuming at launch, event text and window zoom,
 // gamepad cursor, panning.
 void ux_tick(void) {
+    uint8_t *a = capp();
+    if (a && (a[CAPP_MENU] || a[CAPP_STARTUP])) __atomic_store_n(&g_started, true, __ATOMIC_RELAXED);
     resume_run_tick();
     apply_event_font();
     autozoom_tick();

@@ -281,16 +281,17 @@ void port_on_game_exit(int code) {
 }
 
 // ---------------------------------------------------------------------------
-// Watchdog: the game draws every frame, even while loading. If it stops while
-// on screen, it's stuck (e.g. loading a run saved with other mods). Say so, and
-// mark the session like a crash so the next start skips the saved run.
+// Watchdog: once past loading, the game draws every frame. If it stops while on
+// screen, it's stuck (e.g. loading a run saved with other mods). Say so, and mark
+// the session like a crash so the next start skips the saved run. Not while the
+// game starts: with big mods, setting up after its loading bar can take a while.
 static void *watchdog_thread(void *p) {
     (void)p;
     bool reported = false;
     for (;;) {
         sleep(5);
         double last = __atomic_load_n(&g_last_present_ms, __ATOMIC_RELAXED) / 1000.0;
-        bool stuck = g_foreground && g_has_window && last > 0 && now_s() - last > 30;
+        bool stuck = g_foreground && g_has_window && last > 0 && ux_game_started() && now_s() - last > 30;
         if (stuck && !reported) {
             LOGE("watchdog: no frame for %.0f s; the game seems stuck", now_s() - last);
             port_log_mark_crash();
