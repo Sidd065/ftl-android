@@ -40,14 +40,39 @@ To update, install the new `.apk` over the old one. Your saves are kept.
 
 To open and close doors, tap the door button in the bottom-left corner, then
 tap or drag across doors. The beacon map and the upgrade screen zoom in on
-their own. A keyboard, mouse or game controller works too; settings lists the
-buttons.
+their own. A keyboard or mouse works too; settings lists the keys.
+
+## Game controllers
+
+A controller moves a cursor around the game, and A taps where it points. The
+cursor slows down over things you can tap (buttons, rooms, crew, doors,
+beacons, weapons, and the buttons Hyperspace and mods add) and settles onto
+them when you let go of the stick.
+
+| Button | What it does |
+|---|---|
+| Left stick, d-pad | Move the cursor. A d-pad press moves it a little; held, it speeds up |
+| A | Tap, or hold to drag |
+| B, Start | Back |
+| X | Pause |
+| LB, RB | Zoom out, zoom in |
+| Right stick | Look around while zoomed |
+| LT (hold) | Magnifier |
+| RT | Right click, for mods that use one. Hold and move to drag |
+| Select, R3 | Reset the zoom |
+
+On a PlayStation controller, A is Cross, B is Circle and X is Square. The
+buttons can be changed in settings, which can also give one the job of making
+the cursor faster (Turbo) or slower and free of the pull (Precision) while it's
+held. On Android 12 or newer, a DualSense or DualShock 4 touchpad moves the
+cursor like a laptop's. The controller rumbles when you're hit, when you fire
+and when you jump, and the game pauses if it disconnects.
 
 ## Settings and saves
 
-Long-press the app icon for settings: the magnifier, zoom, text size, vibration
-and graphics. That's also where you export and import saves (to keep a backup
-or move to another phone), save logs, and manage mods.
+Long-press the app icon for settings: the magnifier, zoom, text size, vibration,
+game controller and graphics. That's also where you export and import saves (to
+keep a backup or move to another phone), save logs, and manage mods.
 
 ## Mods
 

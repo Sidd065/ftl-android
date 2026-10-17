@@ -10,14 +10,19 @@ import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.CombinedVibration;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -69,6 +74,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     private native void nativePadConnected(boolean connected, String name);
     private native void nativePadButton(int keyCode, boolean down);
     private native void nativePadAxes(float[] axes);
+    private native void nativePadTrackpad(int fingers, float x, float y, boolean pressed);
 
     @Override
     protected void onCreate(Bundle state) {
@@ -251,6 +257,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         mSurface = new SurfaceView(this);
         mSurface.getHolder().addCallback(this);
         mSurface.setOnTouchListener(this::onSurfaceTouch);
+        mSurface.setOnCapturedPointerListener((v, e) -> onCapturedPointer(e));
         mSurface.setFocusable(true);
         mSurface.setFocusableInTouchMode(true);
         setContentView(mSurface);
@@ -301,6 +308,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
         if (focus && mSurface != null) enterImmersive();
+        updateCapture();
     }
 
     private float[] computeLayout(int w, int h) {
@@ -346,6 +354,15 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         nativeSetOption("event_text", prefs.getInt(SettingsActivity.K_EVENT_TEXT, 0));
         nativeSetOption("window_zoom", prefs.getInt(SettingsActivity.K_WINDOW_ZOOM, 0));
         nativeSetOption("event_zoom", prefs.getBoolean(SettingsActivity.K_EVENT_ZOOM, false) ? 1 : 0);
+        nativeSetOption("pad_map_reset", 1);
+        for (java.util.Map.Entry<Integer, Integer> e : PadMap.load(prefs).entrySet())
+            nativeSetOption("pad_btn_" + e.getKey(), e.getValue());
+        nativeSetOption("pad_magnetism", prefs.getBoolean(SettingsActivity.K_PAD_MAGNETISM, true) ? 1 : 0);
+        nativeSetOption("pad_rumble", prefs.getBoolean(SettingsActivity.K_PAD_RUMBLE, true) ? 1 : 0);
+        // Outlines of what the cursor is drawn to, for checking them: an empty file logs/pad-debug
+        nativeSetOption("pad_debug", new File(getFilesDir(), "logs/pad-debug").exists() ? 1 : 0);
+        mTouchpadOn = prefs.getBoolean(SettingsActivity.K_PAD_TOUCHPAD, true);
+        updateCapture();
     }
 
     private int refreshRate() {
@@ -440,10 +457,12 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (mSurface != null && sNativeStarted && touchpadWithoutCapture(e)) return true;
         if (mSurface != null && sNativeStarted && e.isFromSource(android.view.InputDevice.SOURCE_MOUSE))
             return onMouse(e);
         if (mSurface != null && sNativeStarted && e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK)
                 && e.getActionMasked() == MotionEvent.ACTION_MOVE) {
+            mPadDevice = e.getDeviceId();
             mAxes[0] = e.getAxisValue(MotionEvent.AXIS_X);
             mAxes[1] = e.getAxisValue(MotionEvent.AXIS_Y);
             mAxes[2] = e.getAxisValue(MotionEvent.AXIS_Z);
@@ -459,6 +478,89 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private final float[] mAxes = new float[8];
+    private volatile int mPadDevice = -1;  // the controller used last: it rumbles
+
+    static boolean isGamepad(InputDevice d) {
+        int src = d.getSources();
+        return (src & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+                || (src & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK;
+    }
+
+    // ---- DualSense / DualShock touchpad: moves the cursor like a laptop's (pad.c) ----
+    // Android makes it a mouse pointer; pointer capture gives us the fingers instead. A
+    // mouse used meanwhile gets the pointer back until the touchpad is touched again.
+    private int mTouchpad = -1;
+    private float mTouchpadW = 1, mTouchpadH = 1;
+    private boolean mTouchpadOn = true, mMouseInUse;
+
+    private void findTouchpad() {
+        mTouchpad = -1;
+        // Android 11 and older can't capture a touchpad: it stays a mouse, which works too
+        if (Build.VERSION.SDK_INT < 31) return;
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d == null || d.isVirtual() || d.getVendorId() != 0x054c) continue;  // Sony
+            // Android 12 and 13 make it a mouse until it's captured, and a touchpad after
+            if (!d.supportsSource(InputDevice.SOURCE_TOUCHPAD) && !d.supportsSource(InputDevice.SOURCE_MOUSE)) continue;
+            InputDevice.MotionRange x = d.getMotionRange(MotionEvent.AXIS_X, InputDevice.SOURCE_TOUCHPAD);
+            InputDevice.MotionRange y = d.getMotionRange(MotionEvent.AXIS_Y, InputDevice.SOURCE_TOUCHPAD);
+            mTouchpad = id;
+            mTouchpadW = x != null && x.getRange() > 0 ? x.getRange() : 1920;
+            mTouchpadH = y != null && y.getRange() > 0 ? y.getRange() : 1080;
+            break;
+        }
+    }
+
+    private void updateCapture() {
+        if (mSurface == null) return;
+        boolean want = mTouchpad >= 0 && mTouchpadOn && !mMouseInUse && hasWindowFocus() && sNativeStarted;
+        if (want && !mSurface.hasPointerCapture()) mSurface.requestPointerCapture();
+        else if (!want && mSurface.hasPointerCapture()) mSurface.releasePointerCapture();
+    }
+
+    private boolean onCapturedPointer(MotionEvent e) {
+        if (e.getDeviceId() != mTouchpad || !e.isFromSource(InputDevice.SOURCE_TOUCHPAD)) {
+            mMouseInUse = true;  // a mouse: give it the pointer
+            updateCapture();
+            return false;
+        }
+        int action = e.getActionMasked(), n = e.getPointerCount();
+        int fingers = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ? 0
+                : action == MotionEvent.ACTION_POINTER_UP ? n - 1 : n;
+        boolean pressed = (e.getButtonState() & MotionEvent.BUTTON_PRIMARY) != 0;
+        nativePadTrackpad(fingers, e.getX(0) / mTouchpadW, e.getY(0) / mTouchpadH, pressed);
+        return true;
+    }
+
+    // The touchpad touched while the pointer was left to a mouse: take it back. (Newer
+    // Androids make the controller and its touchpad one device: let its sticks through.)
+    private boolean touchpadWithoutCapture(MotionEvent e) {
+        if (mTouchpad < 0 || e.getDeviceId() != mTouchpad || !mTouchpadOn
+                || !e.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) return false;
+        mMouseInUse = false;
+        updateCapture();
+        return true;
+    }
+
+    // Called from native (the game's thread): shake the controller, strength 0..1
+    @SuppressWarnings("unused")
+    void padRumble(float strength, int ms) {
+        InputDevice d = mPadDevice >= 0 ? InputDevice.getDevice(mPadDevice) : null;
+        if (d == null) return;
+        int amp = Math.max(1, Math.min(255, Math.round(strength * 255)));
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                VibratorManager vm = d.getVibratorManager();
+                if (vm.getVibratorIds().length == 0) return;
+                vm.vibrate(CombinedVibration.createParallel(VibrationEffect.createOneShot(ms, amp)));
+            } else {
+                Vibrator v = d.getVibrator();
+                if (v != null && v.hasVibrator()) v.vibrate(VibrationEffect.createOneShot(ms, amp));
+            }
+        } catch (RuntimeException ignored) {
+            // the controller went
+        }
+    }
 
     private static boolean isPadEvent(KeyEvent e) {
         int code = e.getKeyCode();
@@ -469,7 +571,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
                 || e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK));
     }
 
-    // Gamepads reach the game through its own (iOS) controller support.
+    // Controllers drive the port's own cursor (pad.c): watch them come and go.
     private final android.hardware.input.InputManager.InputDeviceListener mPadListener =
             new android.hardware.input.InputManager.InputDeviceListener() {
                 @Override public void onInputDeviceAdded(int id) { scanPads(); }
@@ -484,13 +586,14 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         for (int id : android.view.InputDevice.getDeviceIds()) {
             android.view.InputDevice d = android.view.InputDevice.getDevice(id);
             if (d == null || d.isVirtual()) continue;
-            int src = d.getSources();
-            if ((src & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD
-                    || (src & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK) {
+            if (isGamepad(d)) {
                 name = d.getName();
+                if (mPadDevice < 0 || InputDevice.getDevice(mPadDevice) == null) mPadDevice = id;
                 break;
             }
         }
+        findTouchpad();
+        updateCapture();
         boolean present = name != null;
         if (present != mPadPresent) {
             mPadPresent = present;
@@ -502,6 +605,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     public boolean dispatchKeyEvent(KeyEvent e) {
         int code = e.getKeyCode();
         if (mSurface != null && sNativeStarted && mTextDialog == null && isPadEvent(e)) {
+            mPadDevice = e.getDeviceId();
             if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) nativePadButton(code, true);
             else if (e.getAction() == KeyEvent.ACTION_UP) nativePadButton(code, false);
             return true;
@@ -517,7 +621,11 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private boolean onSurfaceTouch(View v, MotionEvent e) {
-        if (e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) return onMouse(e);
+        if (touchpadWithoutCapture(e)) return true;
+        if (e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) {
+            mMouseInUse = true;
+            return onMouse(e);
+        }
         int action = e.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN:
@@ -571,12 +679,14 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
+        // Before the game has started too: on a cold start this runs first, and scanPads
+        // waits for the game (surfaceChanged scans once it's up).
+        android.hardware.input.InputManager im = getSystemService(android.hardware.input.InputManager.class);
+        if (im != null) im.registerInputDeviceListener(mPadListener, mMain);
         if (mSurface != null && sNativeStarted) {
             pushOptions();
             nativeResume();
             enterImmersive();
-            android.hardware.input.InputManager im = getSystemService(android.hardware.input.InputManager.class);
-            if (im != null) im.registerInputDeviceListener(mPadListener, mMain);
             scanPads();
         }
     }

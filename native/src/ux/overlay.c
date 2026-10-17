@@ -8,6 +8,7 @@
 #include <GLES3/gl3.h>
 #include <math.h>
 #include <pthread.h>
+#include <string.h>
 #include <time.h>
 
 #include "../fw/fw.h"
@@ -123,6 +124,10 @@ static int g_flash_icon;
 static bool g_minimap_on = true, g_minimap_hidden;
 static bool g_cursor_on;
 static float g_cursor_x, g_cursor_y;
+#define MAX_DEBUG_RECTS 768
+static float g_debug_rects[MAX_DEBUG_RECTS * 4];
+static unsigned g_debug_colors[MAX_DEBUG_RECTS];
+static int g_ndebug;
 // magnifier
 static bool g_loupe_on, g_lp_down, g_lp_moved, g_lp_force;
 static float g_lp_x, g_lp_y, g_lp_x0, g_lp_y0;
@@ -158,6 +163,16 @@ void overlay_cursor(bool visible, float sx, float sy) {
     g_cursor_on = visible;
     g_cursor_x = sx;
     g_cursor_y = sy;
+    pthread_mutex_unlock(&g_lock);
+}
+void overlay_debug_rects(const float *rects, const unsigned *colors, int n) {
+    if (n > MAX_DEBUG_RECTS) n = MAX_DEBUG_RECTS;
+    pthread_mutex_lock(&g_lock);
+    g_ndebug = rects ? n : 0;
+    if (g_ndebug) {
+        memcpy(g_debug_rects, rects, (size_t)g_ndebug * 4 * sizeof *rects);
+        memcpy(g_debug_colors, colors, (size_t)g_ndebug * sizeof *colors);
+    }
     pthread_mutex_unlock(&g_lock);
 }
 void overlay_loupe_touch(int phase, float sx, float sy) {
@@ -207,12 +222,17 @@ void overlay_draw(int sw, int sh, unsigned game_fbo, int gw, int gh) {
     show_cursor = g_cursor_on;
     cx_ = g_cursor_x;
     cy_ = g_cursor_y;
+    static float debug_rects[MAX_DEBUG_RECTS * 4];
+    static unsigned debug_colors[MAX_DEBUG_RECTS];
+    int ndebug = g_ndebug;
+    memcpy(debug_rects, g_debug_rects, (size_t)ndebug * 4 * sizeof *debug_rects);
+    memcpy(debug_colors, g_debug_colors, (size_t)ndebug * sizeof *debug_colors);
     pthread_mutex_unlock(&g_lock);
     if (show_loupe && !loupe_was_shown && !forced) ux_haptic(1);  // held long enough: the magnifier is up
     loupe_was_shown = show_loupe;
     bool show_mm = zoom > 1.01 && g_minimap_on && !g_minimap_hidden;
     bool show_flash = ficon && ft < 0.6;
-    if (!show_mm && !show_flash && !show_loupe && !show_cursor) {
+    if (!show_mm && !show_flash && !show_loupe && !show_cursor && !ndebug) {
         pthread_mutex_lock(&g_lock);
         g_mm_w = 0;
         pthread_mutex_unlock(&g_lock);
@@ -325,6 +345,25 @@ void overlay_draw(int sw, int sh, unsigned game_fbo, int gw, int gh) {
         rrect(mx - r - unit * 0.25f, my - r - unit * 0.25f, 2 * r + unit * 0.5f, 2 * r + unit * 0.5f,
               r + unit * 0.25f, unit * 0.2f, clear, dark);
         rrect(mx - r, my - r, 2 * r, 2 * r, r, unit * 0.3f, clear, ring);
+    }
+
+    if (ndebug) {
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_STENCIL_TEST);
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        glUseProgram(g_prog);
+        glBindVertexArray(g_vao);
+        glUniform2f(u_screen, (float)sw, (float)sh);
+        const float clear[4] = {0, 0, 0, 0};
+        for (int i = 0; i < ndebug; i++) {
+            unsigned c = debug_colors[i];
+            const float edge[4] = {(c >> 16 & 255) / 255.0f, (c >> 8 & 255) / 255.0f, (c & 255) / 255.0f, 0.9f};
+            rrect(debug_rects[i * 4], debug_rects[i * 4 + 1], debug_rects[i * 4 + 2], debug_rects[i * 4 + 3], 0,
+                  unit * 0.18f, clear, edge);
+        }
     }
 
     if (show_cursor) {

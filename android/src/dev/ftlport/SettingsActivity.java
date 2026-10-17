@@ -41,6 +41,9 @@ public class SettingsActivity extends Activity {
     static final String K_EVENT_ZOOM = "event_zoom";        // boolean
     static final String K_RESUME = "resume_run";            // boolean
     static final String K_HYPERSPACE = "hyperspace";        // boolean
+    static final String K_PAD_MAGNETISM = "pad_magnetism";  // boolean: the cursor is drawn to buttons
+    static final String K_PAD_RUMBLE = "pad_rumble";        // boolean
+    static final String K_PAD_TOUCHPAD = "pad_touchpad";    // boolean: DualSense / DualShock touchpad moves it
 
     private static final int REQ_EXPORT = 1, REQ_IMPORT = 2, REQ_LOGS = 3;
 
@@ -102,6 +105,16 @@ public class SettingsActivity extends Activity {
 
         section(R.string.set_controls);
         text(R.string.set_controls_body, 15, 0xFFCFD8DC);
+
+        section(R.string.set_controller);
+        text(R.string.set_controller_desc, 14, 0xFF90A4AE);
+        button(R.string.set_pad_map, v -> startActivity(new Intent(this, ControllerActivity.class)));
+        toggle(R.string.set_pad_magnetism, R.string.set_pad_magnetism_desc, mPrefs.getBoolean(K_PAD_MAGNETISM, true),
+                v -> mPrefs.edit().putBoolean(K_PAD_MAGNETISM, v).apply());
+        toggle(R.string.set_pad_rumble, R.string.set_pad_rumble_desc, mPrefs.getBoolean(K_PAD_RUMBLE, true),
+                v -> mPrefs.edit().putBoolean(K_PAD_RUMBLE, v).apply());
+        toggle(R.string.set_pad_touchpad, R.string.set_pad_touchpad_desc, mPrefs.getBoolean(K_PAD_TOUCHPAD, true),
+                v -> mPrefs.edit().putBoolean(K_PAD_TOUCHPAD, v).apply());
 
         section(R.string.set_saves);
         text(R.string.set_saves_desc, 14, 0xFF90A4AE);

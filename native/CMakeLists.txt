@@ -25,6 +25,8 @@ set(CORE_SOURCES
     src/patches.c
     src/hyperspace.c
     src/ux/ux.c
+    src/ux/pad.c
+    src/ux/targets.c
     src/ux/overlay.c
     src/ux/mods.c
     src/ux/png.c

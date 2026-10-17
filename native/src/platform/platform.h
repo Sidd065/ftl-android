@@ -31,7 +31,8 @@ void plat_show_alert(const char *title, const char *msg, const char **buttons, i
 void plat_open_url(const char *url);
 void plat_request_quit(void);  // ask the player to confirm quitting; yes -> ux_quit()
 void plat_keep_screen_on(bool on);
-void plat_haptic(int kind);  // short vibration: 1 magnifier shown, 2 pause toggled
+void plat_haptic(int kind);  // short vibration: 1 magnifier shown, 2 pause toggled, 3 right click
+void plat_pad_rumble(float strength, int ms);  // the game controller's motors, strength 0..1 (any thread)
 
 // callbacks into the framework layer (implemented in fw/)
 void fw_alert_result(int button);

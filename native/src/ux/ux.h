@@ -15,5 +15,8 @@ void ux_handle_mouse(int action, float sx, float sy, float wheel);  // see ux.c 
 void ux_pad_connected(bool connected, const char *name);
 void ux_pad_button(int android_keycode, bool down);
 void ux_pad_axes(const float *axes);  // lx, ly, rx, ry, lt, rt, hat x, hat y
+// A DualSense / DualShock touchpad: fingers on it (0: lifted), the first one's position
+// (0..1 across and down), whether it's pressed in
+void ux_pad_trackpad(int fingers, float x, float y, bool pressed);
 void ux_tick(void);                   // main thread, each run-loop pass
 bool ux_game_started(void);           // the menu came up once: loading is over (any thread)

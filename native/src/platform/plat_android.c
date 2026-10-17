@@ -157,7 +157,7 @@ void *plat_gl_get_proc(const char *name) { return (void *)eglGetProcAddress(name
 // ---------------------------------------------------------------------------
 // event queue (UI thread -> game main thread)
 enum { EV_TOUCH, EV_PAUSE, EV_RESUME, EV_LOWMEM, EV_TEXT, EV_ALERT, EV_BACK, EV_KEY, EV_MOUSE, EV_QUIT,
-       EV_PAD_CONN, EV_PAD_BUTTON, EV_PAD_AXES };
+       EV_PAD_CONN, EV_PAD_BUTTON, EV_PAD_AXES, EV_PAD_TRACKPAD };
 typedef struct {
     int type;
     int phase;
@@ -218,6 +218,7 @@ void plat_pump_events(void) {
             break;
         case EV_PAD_BUTTON: ux_pad_button((int)e.id, e.phase != 0); break;
         case EV_PAD_AXES: ux_pad_axes(e.ax); break;
+        case EV_PAD_TRACKPAD: ux_pad_trackpad(e.phase, e.x, e.y, e.id != 0); break;
         }
     }
     ux_tick();
@@ -259,6 +260,7 @@ void plat_open_url(const char *url) { call_void("openUrl", "(Ljava/lang/String;)
 void plat_request_quit(void) { call_void("confirmQuit", "()V"); }
 void plat_keep_screen_on(bool on) { (void)on; }  // the activity always keeps the screen on
 void plat_haptic(int kind) { call_void("haptic", "(I)V", kind); }
+void plat_pad_rumble(float strength, int ms) { call_void("padRumble", "(FI)V", (double)strength, ms); }
 void port_report_fatal(const char *msg) { call_void("showFatal", "(Ljava/lang/String;)V", jstr(msg)); }
 // The game called exit() (normally after saving on terminate). Let go of the
 // window, have the activity finish (it kills the process once destroyed) and
@@ -448,6 +450,11 @@ JNIEXPORT void JNICALL JNIFN(nativePadAxes)(JNIEnv *env, jobject thiz, jfloatArr
     jsize n = (*env)->GetArrayLength(env, axes);
     (*env)->GetFloatArrayRegion(env, axes, 0, n < 8 ? n : 8, e.ax);
     q_push(e);
+}
+JNIEXPORT void JNICALL JNIFN(nativePadTrackpad)(JNIEnv *env, jobject thiz, jint fingers, jfloat x, jfloat y,
+                                                 jboolean pressed) {
+    (void)env; (void)thiz;
+    q_push((pevent){.type = EV_PAD_TRACKPAD, .phase = fingers, .x = x, .y = y, .id = pressed ? 1 : 0});
 }
 JNIEXPORT void JNICALL JNIFN(nativeKey)(JNIEnv *env, jobject thiz, jint keycode, jboolean down) {
     (void)env; (void)thiz;

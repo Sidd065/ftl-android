@@ -13,3 +13,6 @@ void overlay_loupe_enable(bool on);
 void overlay_minimap_enable(bool on);
 void overlay_minimap_hide(bool hide);  // while zoomed in on a window
 void overlay_cursor(bool visible, float sx, float sy);  // gamepad cursor (main thread)
+// Outlines of what the gamepad cursor is drawn to, for checking them (main thread):
+// x, y, w, h per rect in surface px and a colour each (0xRRGGBB); NULL or 0 to stop.
+void overlay_debug_rects(const float *rects, const unsigned *colors, int n);

@@ -24,45 +24,14 @@
 #include "../patches.h"
 #include "../platform/platform.h"
 #include "../port_main.h"
+#include "game.h"
 #include "mods.h"
 #include "overlay.h"
 #include "png.h"
+#include "targets.h"
+#include "ux_internal.h"
 #include "ux_present.h"
 #include "port_log.h"
-
-// ---- game addresses (FTL iOS 1.6.21, arm64) ---------------------------------------
-#define G_LOG_FN 0x10006051cull       // printf-style logger, compiled to `ret`
-#define G_POST_EVENT 0x100117268ull   // void post_event(sil_event *)
-#define G_CAPP_PTR 0x100241fc0ull     // CApp *
-#define G_TIME_BASE 0x100250c88ull    // double, event timestamp base (s)
-#define G_TOGGLE_PAUSE 0x100180240ull // void (CommandGui *): the pause hotkey's action
-#define G_HOTKEY 0x100040728ull       // int (const std::string *action): `return 0` on iOS
-// DoorBox::KeyDown: `cbz` that skips the open / close hotkey while that button is hidden
-#define G_DOOR_KEY_OPEN 0x100097f9cull
-#define G_DOOR_KEY_CLOSE 0x100097fe4ull
-
-// CApp fields
-#define CAPP_GUI 0x10       // CommandGui *
-#define CAPP_MENU 0x20      // MainMenu (first byte: open)
-#define CAPP_STARTUP 0x40b8 // language chooser / startup screen up (game ignores keys)
-// MainMenu fields: sub-screens that Escape closes
-static const int MENU_SUBSCREENS[] = {0x26b8, 0x3d00, 0x3fd0, 0x26c8, 0x15f0};
-#define MENU_CONTINUE_ACTIVE 0x80  // MainMenu: the Continue button is active (there's a saved run)
-#define MENU_ITEM 0x450            // MainMenu: int, the button just pressed; CApp acts on it (9: Continue)
-#define GUI_PAUSED 0x3c58   // CommandGui: bool paused
-#define GUI_STARMAP 0x1e90  // CommandGui: StarMap * (+8 open, +0x88 int x, y, +0x900 choosing the next sector)
-#define GUI_FOCUS_WINDOWS 0x1ea0  // CommandGui: std::vector<FocusWindow *> (FocusWindow +8: bool open)
-#define GUI_UPGRADES 0x3cf0 // CommandGui: the ship / crew / cargo window (+0x68 tab)
-// CommandGui: boxes that take keys before any focus window (the game menu, options,
-// confirmations); each has its open flag at +8. While one is up it covers everything.
-static const int GUI_MODALS[] = {0x5948, 0x2248, 0x27e8, 0x3c68, 0x5648, 0x28f8};
-#define GUI_CHOICE 0x1f68   // CommandGui: ChoiceBox, the event window (+8 open)
-#define CHOICE_FRAME 0x28   // ChoiceBox: WindowFrame * (int x, y, w, h from the box's corner)
-#define CHOICE_LIST 0x48    // ChoiceBox: std::vector<ChoiceText>, 584-byte entries
-#define CHOICE_COLUMN 0x60  // ChoiceBox: unsigned; more choices than this use a different, wide layout
-#define CHOICE_FONT 0x88    // ChoiceBox: int font size, 10..13 (the desktop font +/- hotkeys)
-#define CHOICE_CENTRED 0x8c // ChoiceBox: bool; false moves the box left, clear of an enemy ship
-#define CHOICE_RECTS 0x68   // ChoiceBox: std::vector of int x, y, w, h, one per choice (HUD units)
 
 typedef struct {
     int32_t cls, type;
@@ -204,6 +173,7 @@ int ux_patches_apply(mo_image *img) {
     } else
         LOGW("ux: unexpected code in door hotkeys; Z/X only work in door mode");
     fails += png_install(img) != 0;
+    if (targets_install(img) == 0) targets_set_frame_fn(pad_frame);
     if (mods_install(img, port_mods_index()) != 0) LOGW("ux: mods could not be loaded; playing without them");
     return fails ? -1 : 0;
 }
@@ -211,6 +181,7 @@ int ux_patches_apply(mo_image *img) {
 // ---------------------------------------------------------------------------------
 // game state probes
 static void *capp(void) { return g_img ? *(void **)mo_ptr(g_img, G_CAPP_PTR) : NULL; }
+uint8_t *ux_capp(void) { return capp(); }
 bool ux_in_main_menu(void) {
     uint8_t *a = capp();
     return a && (a[CAPP_MENU] || a[CAPP_STARTUP]);
@@ -223,18 +194,25 @@ bool ux_in_game(void) {
 static bool at_top_menu(void) {
     uint8_t *a = capp();
     if (!a || !a[CAPP_MENU] || a[CAPP_STARTUP]) return false;
-    for (size_t i = 0; i < sizeof MENU_SUBSCREENS / sizeof *MENU_SUBSCREENS; i++)
-        if (a[CAPP_MENU + MENU_SUBSCREENS[i]]) return false;
+    static const int subscreens[] = MENU_SUBSCREEN_OFFSETS;
+    for (size_t i = 0; i < sizeof subscreens / sizeof *subscreens; i++)
+        if (a[CAPP_MENU + subscreens[i]]) return false;
     return true;
 }
 // Toggle pause like the desktop hotkey. Returns the new state (-1: not in game).
-static int toggle_pause(void) {
+int ux_toggle_pause(void) {
     uint8_t *a = capp();
     if (!a || a[CAPP_MENU] || a[CAPP_STARTUP]) return -1;
     uint8_t *gui = *(uint8_t **)(a + CAPP_GUI);
     if (!gui) return -1;
     ((void (*)(void *))mo_ptr(g_img, G_TOGGLE_PAUSE))(gui);
     return gui[GUI_PAUSED] != 0;
+}
+bool ux_paused(void) {
+    uint8_t *a = capp();
+    if (!a || a[CAPP_MENU] || a[CAPP_STARTUP]) return false;
+    uint8_t *gui = *(uint8_t **)(a + CAPP_GUI);
+    return gui && gui[GUI_PAUSED];
 }
 
 // ---------------------------------------------------------------------------------
@@ -255,7 +233,6 @@ static void key_tap(int sil_code) {
     ux_key(sil_code, true);
     ux_key(sil_code, false);
 }
-static void cursor_hide(void);
 static void zoom_at(double factor, double sx, double sy);
 
 // ---------------------------------------------------------------------------------
@@ -312,6 +289,10 @@ static rectd target_view(void) {
     rectd v = g_view_to;
     pthread_mutex_unlock(&g_view_lock);
     return v;
+}
+void ux_target_view(double v[4]) {
+    rectd r = target_view();
+    v[0] = r.x0, v[1] = r.y0, v[2] = r.x1, v[3] = r.y1;
 }
 void ux_reset_zoom(bool animate) { set_view(full_view(), animate ? 0.18 : 0); }
 
@@ -452,7 +433,7 @@ static void gesture_end(void) {
     double slop = g_dpi / 6.0;  // ~4 mm
     if (dur < 0.35 && g_gmove < slop) {
         // two-finger tap: pause / unpause
-        int paused = g_two_finger_pause ? toggle_pause() : -1;
+        int paused = g_two_finger_pause ? ux_toggle_pause() : -1;
         LOGI("ux: two-finger tap (%.0f ms) -> paused %d", dur * 1000, paused);
         if (paused >= 0) {
             overlay_flash(paused ? OVERLAY_ICON_PAUSE : OVERLAY_ICON_PLAY);
@@ -499,7 +480,7 @@ static void right_press(int held, int presser, double t) {
 
 void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
     if (phase == TOUCH_BEGAN) {
-        cursor_hide();
+        pad_cursor_hide();
         int s = free_slot();
         if (s < 0) return;
         P[s] = (ptr_t){true, id, sx, sy, sx, sy, t, false};
@@ -673,17 +654,20 @@ void ux_handle_key(int android_keycode, bool down) {
 // the gamepad's A button act as a finger.
 #define SYNTH_TOUCH_ID 7777
 static bool g_synth_down;
-static void synth_touch(int phase, double sx, double sy) {
+void ux_synth_touch_game(int phase, double gx, double gy) {
     if (phase == TOUCH_BEGAN) {
-        if (g_synth_down) synth_touch(TOUCH_CANCELLED, sx, sy);
+        if (g_synth_down) ux_synth_touch_game(TOUCH_CANCELLED, gx, gy);
         g_synth_down = true;
     } else if (!g_synth_down) {
         return;
     }
     if (phase == TOUCH_ENDED || phase == TOUCH_CANCELLED) g_synth_down = false;
+    fw_dispatch_touch(phase, SYNTH_TOUCH_ID, gx, gy, now_s());
+}
+static void synth_touch(int phase, double sx, double sy) {
     double gx, gy;
     surface_to_game(sx, sy, &gx, &gy);
-    fw_dispatch_touch(phase, SYNTH_TOUCH_ID, gx, gy, now_s());
+    ux_synth_touch_game(phase, gx, gy);
 }
 
 static bool g_mouse_right;
@@ -701,7 +685,7 @@ void ux_handle_mouse(int action, float sx, float sy, float wheel) {
     bool moved = fabsf(sx - last_x) > 2 || fabsf(sy - last_y) > 2;
     last_x = sx;
     last_y = sy;
-    if (action != 0 || moved) cursor_hide();
+    if (action != 0 || moved) pad_cursor_hide();
     switch (action) {
     case 0:
         synth_touch(TOUCH_MOVED, sx, sy);  // drags while the button is down
@@ -727,38 +711,7 @@ void ux_handle_mouse(int action, float sx, float sy, float wheel) {
 }
 
 // ---------------------------------------------------------------------------------
-// Gamepads. The game never acts on controller input, so a pad drives an
-// on-screen cursor whose A button touches the screen:
-//   left stick: move (d-pad: slow and precise)   A: tap / hold / drag   B: Back
-//   X: pause   LB / RB: zoom out / in at the cursor   right stick: pan when zoomed
-//   LT (hold): magnifier at the cursor   Start: Back (menu)   Select / R3: reset zoom
-static struct {
-    bool visible;
-    double x, y;           // surface px
-    float lx, ly, rx, ry;  // sticks after the dead zone, y down
-    int hat_x, hat_y;      // d-pad reported as hat axes
-    int keys[4];           // d-pad keys: up, down, left, right
-    bool lt_axis, lt_key, loupe;
-    double t_last;
-} g_cur;
-
-static void cursor_show(void) {
-    present_rect d = present_get_dest();
-    if (!g_cur.visible && g_cur.x == 0 && g_cur.y == 0) {
-        g_cur.x = d.x + d.w / 2.0;
-        g_cur.y = d.y + d.h / 2.0;
-    }
-    g_cur.visible = true;
-    overlay_cursor(true, (float)g_cur.x, (float)g_cur.y);
-}
-static void cursor_hide(void) {
-    if (!g_cur.visible) return;
-    g_cur.visible = false;
-    overlay_cursor(false, 0, 0);
-    if (g_cur.loupe) overlay_loupe_touch(0, 0, 0);
-    g_cur.loupe = false;
-}
-
+// zooming and panning (the mouse wheel, the gamepad)
 // Zoom by `factor`, keeping the game point under (sx, sy) in place.
 static void zoom_at(double factor, double sx, double sy) {
     present_rect d = present_get_dest();
@@ -786,12 +739,8 @@ static void pan_by(double dx, double dy) {
     set_view((rectd){v.x0 + dx * k, v.y0 + dy * k, v.x1 + dx * k, v.y1 + dy * k}, 0);
 }
 
-static void loupe_update(void) {
-    bool want = g_cur.visible && (g_cur.lt_axis || g_cur.lt_key);
-    if (want && !g_cur.loupe) overlay_loupe_touch(3, (float)g_cur.x, (float)g_cur.y);
-    if (!want && g_cur.loupe) overlay_loupe_touch(0, 0, 0);
-    g_cur.loupe = want;
-}
+void ux_zoom_at(double factor, double sx, double sy) { zoom_at(factor, sx, sy); }
+void ux_pan_by(double dx, double dy) { pan_by(dx, dy); }
 
 // Keep the event window's text at the size picked in settings.
 static void apply_event_font(void) {
@@ -820,8 +769,9 @@ static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
     // The game gives keys to the first open window in this list, so it runs
     // front to back: the menu comes before an event, an event before the store
     // (which can stay open underneath one).
-    for (size_t i = 0; i < sizeof GUI_MODALS / sizeof *GUI_MODALS; i++)
-        if (gui[GUI_MODALS[i] + 8]) return false;
+    static const int modals[] = GUI_MODAL_OFFSETS;
+    for (size_t i = 0; i < sizeof modals / sizeof *modals; i++)
+        if (gui[modals[i] + 8]) return false;
     uint8_t *open = NULL;
     uint8_t **fw = (uint8_t **)(gui + GUI_FOCUS_WINDOWS);
     for (uint8_t **w = (uint8_t **)fw[0]; w < (uint8_t **)fw[1] && !open; w++)
@@ -945,111 +895,15 @@ static void resume_run_tick(void) {
 static bool g_started;
 bool ux_game_started(void) { return __atomic_load_n(&g_started, __ATOMIC_RELAXED); }
 
-// Main thread, every run-loop pass: resuming at launch, event text and window zoom,
-// gamepad cursor, panning.
+// Main thread, every run-loop pass: resuming at launch, event text and window zoom, the
+// gamepad cursor (pad.c).
 void ux_tick(void) {
     uint8_t *a = capp();
     if (a && (a[CAPP_MENU] || a[CAPP_STARTUP])) __atomic_store_n(&g_started, true, __ATOMIC_RELAXED);
     resume_run_tick();
     apply_event_font();
     autozoom_tick();
-    double t = now_s(), dt = t - g_cur.t_last;
-    g_cur.t_last = t;
-    if (dt > 0.1) dt = 0.1;
-    if (!g_cur.visible) return;
-    present_rect d = present_get_dest();
-    double vx = 0, vy = 0, m = hypot(g_cur.lx, g_cur.ly);
-    if (m > 0) {  // speed grows with tilt squared: fine control near the centre
-        double sp = d.h * 1.3 * m * m;
-        vx = g_cur.lx / m * sp;
-        vy = g_cur.ly / m * sp;
-    }
-    int dx = g_cur.hat_x ? g_cur.hat_x : g_cur.keys[3] - g_cur.keys[2];
-    int dy = g_cur.hat_y ? g_cur.hat_y : g_cur.keys[1] - g_cur.keys[0];
-    vx += dx * d.h * 0.15;
-    vy += dy * d.h * 0.15;
-    if (vx != 0 || vy != 0) {
-        double nx = g_cur.x + vx * dt, ny = g_cur.y + vy * dt;
-        double x0 = d.x, y0 = d.y, x1 = d.x + d.w - 1, y1 = d.y + d.h - 1;
-        // pushing past an edge while zoomed scrolls the view instead
-        pan_by(nx < x0 ? nx - x0 : nx > x1 ? nx - x1 : 0, ny < y0 ? ny - y0 : ny > y1 ? ny - y1 : 0);
-        g_cur.x = nx < x0 ? x0 : nx > x1 ? x1 : nx;
-        g_cur.y = ny < y0 ? y0 : ny > y1 ? y1 : ny;
-        overlay_cursor(true, (float)g_cur.x, (float)g_cur.y);
-        synth_touch(TOUCH_MOVED, g_cur.x, g_cur.y);  // dragging with A held
-        if (g_cur.loupe) overlay_loupe_touch(2, (float)g_cur.x, (float)g_cur.y);
-    }
-    if (g_cur.rx != 0 || g_cur.ry != 0) pan_by(g_cur.rx * d.h * 1.5 * dt, g_cur.ry * d.h * 1.5 * dt);
-}
-
-void ux_pad_connected(bool connected, const char *name) {
-    LOGI("ux: gamepad %s%s%s", connected ? "connected" : "disconnected", name ? ": " : "", name ? name : "");
-    if (!connected) {
-        float keep_x = (float)g_cur.x, keep_y = (float)g_cur.y;
-        cursor_hide();
-        memset(&g_cur, 0, sizeof g_cur);
-        g_cur.x = keep_x;
-        g_cur.y = keep_y;
-    }
-}
-
-// Android KEYCODE_BUTTON_* / DPAD_* from a gamepad
-void ux_pad_button(int k, bool down) {
-    switch (k) {
-    case 96:  // A: touch at the cursor
-        cursor_show();
-        synth_touch(down ? TOUCH_BEGAN : TOUCH_ENDED, g_cur.x, g_cur.y);
-        return;
-    case 97:  // B: Back
-        if (down) ux_handle_back();
-        return;
-    case 99:  // X: pause
-        if (down) {
-            int paused = toggle_pause();
-            if (paused >= 0) overlay_flash(paused ? OVERLAY_ICON_PAUSE : OVERLAY_ICON_PLAY);
-        }
-        return;
-    case 102: case 103:  // LB / RB: zoom
-        if (down) {
-            cursor_show();
-            zoom_at(k == 103 ? 1.5 : 1 / 1.5, g_cur.x, g_cur.y);
-        }
-        return;
-    case 104:  // L2 as a button: magnifier
-        g_cur.lt_key = down;
-        cursor_show();
-        loupe_update();
-        return;
-    case 108:  // Start: Back (closes windows, game menu, quit prompt on the title screen)
-        if (down) ux_handle_back();
-        return;
-    case 109: case 107:  // Select, right stick click: reset zoom
-        if (down) ux_reset_zoom(true);
-        return;
-    case 19: case 20: case 21: case 22:  // d-pad: precise cursor movement
-        g_cur.keys[k - 19] = down;
-        if (down) cursor_show();
-        return;
-    default: return;
-    }
-}
-
-static float deadzone(float v) {
-    const float dz = 0.18f;
-    if (fabsf(v) < dz) return 0;
-    return (v - copysignf(dz, v)) / (1 - dz);
-}
-// axes: left x/y, right x/y, left/right trigger, hat x/y (Android: y down)
-void ux_pad_axes(const float *ax) {
-    g_cur.lx = deadzone(ax[0]);
-    g_cur.ly = deadzone(ax[1]);
-    g_cur.rx = deadzone(ax[2]);
-    g_cur.ry = deadzone(ax[3]);
-    g_cur.hat_x = ax[6] > 0.5f ? 1 : ax[6] < -0.5f ? -1 : 0;
-    g_cur.hat_y = ax[7] > 0.5f ? 1 : ax[7] < -0.5f ? -1 : 0;
-    g_cur.lt_axis = ax[4] > 0.5f;
-    if (g_cur.lx != 0 || g_cur.ly != 0 || g_cur.hat_x || g_cur.hat_y || g_cur.lt_axis) cursor_show();
-    loupe_update();
+    pad_tick();
 }
 
 void ux_set_option(const char *key, float value) {
@@ -1063,6 +917,7 @@ void ux_set_option(const char *key, float value) {
     else if (!strcmp(key, "window_zoom")) g_window_zoom = (int)value;
     else if (!strcmp(key, "event_zoom")) g_event_zoom = value != 0;
     else if (!strcmp(key, "resume_run")) g_resume_run = value != 0;
+    else if (!strncmp(key, "pad_", 4)) pad_set_option(key, value);
 }
 
 void ux_haptic(int kind) {
