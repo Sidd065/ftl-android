@@ -100,6 +100,8 @@ static const struct { const char *action; int key; } HOTKEYS[] = {
     {"power_5", '5'}, {"power_6", '6'}, {"power_7", '7'}, {"power_8", '8'},
     {"crew1", K_F1}, {"crew2", K_F1 + 1}, {"crew3", K_F1 + 2}, {"crew4", K_F1 + 3},
     {"crew5", K_F1 + 4}, {"crew6", K_F1 + 5}, {"crew7", K_F1 + 6}, {"crew8", K_F1 + 7},
+    // Hyperspace's command console, for mods that turn it on (Multiverse does)
+    {"console", '\\'},
 };
 // libc++ std::string (Apple's alternate layout)
 static const char *cxx_str(const void *s, size_t *len) {
