@@ -14,15 +14,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
  * Copies the two files the port needs (the iOS executable "FTL" and the data
  * package "ftl.dat") out of the user's own FTL for iPad .ipa (a zip), or out of
- * an extracted FTL.app folder, into app-private storage.
+ * an extracted FTL.app folder, into app-private storage. Info.plist comes along
+ * when it's there, for the game's version.
  */
 final class Importer {
+    // The build of the game the app's game hooks and Hyperspace are made for: the
+    // LC_UUID of FTL for iPad 1.6.21 (arm64). native/src/ux/ux.c checks the same.
+    private static final String SUPPORTED_BUILD = "873d2b34d7073d6bab83267bf4c5bbc0";
+
     interface Progress {
         void onProgress(String what, long done, long total);
     }
@@ -54,6 +62,7 @@ final class Importer {
                 String target = null;
                 if (isAppFile(name, "FTL")) target = "FTL";
                 else if (isAppFile(name, "ftl.dat")) target = "ftl.dat";
+                else if (isAppFile(name, "Info.plist")) target = "Info.plist";
                 if (target == null) continue;
                 File out = new File(tmp, target);
                 try (OutputStream os = new FileOutputStream(out)) {
@@ -63,7 +72,8 @@ final class Importer {
                         p.onProgress(target, counting.count, total);
                     }
                 }
-                if (target.equals("FTL")) gotBin = true; else gotDat = true;
+                if (target.equals("FTL")) gotBin = true;
+                else if (target.equals("ftl.dat")) gotDat = true;
             }
         }
         if (!gotBin || !gotDat)
@@ -80,8 +90,9 @@ final class Importer {
         File tmp = new File(ctx.getFilesDir(), "import.tmp");
         deleteRecursive(tmp);
         if (!tmp.mkdirs()) throw new IOException("cannot create " + tmp);
-        for (String f : new String[] {"FTL", "ftl.dat"}) {
+        for (String f : new String[] {"FTL", "ftl.dat", "Info.plist"}) {
             String id = childId(cr, tree, appDir, f);
+            if (id == null && f.equals("Info.plist")) continue;
             if (id == null) throw new IOException("Missing " + f);
             Uri u = DocumentsContract.buildDocumentUriUsingTree(tree, id);
             long total = querySize(cr, u);
@@ -99,7 +110,7 @@ final class Importer {
         finish(ctx, tmp, gameDir(ctx));
     }
 
-    /** Import files someone copied into Android/data/<pkg>/files (FTL + ftl.dat). */
+    /** Import files someone copied into Android/data/<pkg>/files (FTL + ftl.dat, and Info.plist if there). */
     static boolean importFromExternalDir(Context ctx, Progress p) throws IOException {
         File ext = ctx.getExternalFilesDir(null);
         if (ext == null) return false;
@@ -108,14 +119,18 @@ final class Importer {
         File tmp = new File(ctx.getFilesDir(), "import.tmp");
         deleteRecursive(tmp);
         if (!tmp.mkdirs()) throw new IOException("cannot create " + tmp);
+        File plist = new File(ext, "Info.plist");
         copyFile(bin, new File(tmp, "FTL"), p);
         copyFile(dat, new File(tmp, "ftl.dat"), p);
+        if (plist.isFile()) copyFile(plist, new File(tmp, "Info.plist"), p);
         finish(ctx, tmp, gameDir(ctx));
         // The copies in shared storage are no longer needed (saves ~240 MB).
         //noinspection ResultOfMethodCallIgnored
         bin.delete();
         //noinspection ResultOfMethodCallIgnored
         dat.delete();
+        //noinspection ResultOfMethodCallIgnored
+        plist.delete();
         return true;
     }
 
@@ -133,30 +148,11 @@ final class Importer {
     /** Returns null if usable, else a human-readable reason. */
     static String checkExecutable(File f) {
         try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
-            int magic = r.readInt();
-            long sliceOff = 0;
-            if (magic == 0xCAFEBABE) {
-                int n = r.readInt();
-                sliceOff = -1;
-                for (int i = 0; i < n; i++) {
-                    int cpu = r.readInt();
-                    r.readInt();
-                    int off = r.readInt();
-                    r.readInt();
-                    r.readInt();
-                    if (cpu == 0x0100000C) sliceOff = off & 0xffffffffL;
-                }
-                if (sliceOff < 0) return "The FTL executable has no 64-bit (arm64) code.";
-            }
-            r.seek(sliceOff);
-            byte[] hdr = new byte[32];
-            r.readFully(hdr);
-            if (le32(hdr, 0) != 0xFEEDFACF || le32(hdr, 4) != 0x0100000C)
-                return "The FTL executable isn't a 64-bit iOS binary.";
-            int ncmds = le32(hdr, 16), sizeofcmds = le32(hdr, 20);
-            byte[] cmds = new byte[sizeofcmds];
-            r.readFully(cmds);
-            int p = 0;
+            long slice = arm64Slice(r);
+            if (slice < 0) return "The FTL executable has no 64-bit (arm64) code.";
+            byte[] cmds = loadCommands(r, slice);
+            if (cmds == null) return "The FTL executable isn't a 64-bit iOS binary.";
+            int ncmds = le32(cmds, 0), p = 4;
             for (int i = 0; i < ncmds && p + 8 <= cmds.length; i++) {
                 int cmd = le32(cmds, p), size = le32(cmds, p + 4);
                 if (cmd == 0x2C && le32(cmds, p + 16) != 0)
@@ -169,6 +165,141 @@ final class Importer {
         } catch (IOException e) {
             return "Couldn't read the FTL executable: " + e.getMessage();
         }
+    }
+
+    /** The imported executable's LC_UUID in hex, which tells builds of the game apart; null if unreadable. */
+    static String buildId(Context ctx) {
+        try (RandomAccessFile r = new RandomAccessFile(new File(gameDir(ctx), "FTL"), "r")) {
+            long slice = arm64Slice(r);
+            byte[] cmds = slice < 0 ? null : loadCommands(r, slice);
+            if (cmds == null) return null;
+            int ncmds = le32(cmds, 0), p = 4;
+            for (int i = 0; i < ncmds && p + 24 <= cmds.length; i++) {
+                int cmd = le32(cmds, p), size = le32(cmds, p + 4);
+                if (cmd == 0x1B) {  // LC_UUID
+                    StringBuilder sb = new StringBuilder();
+                    for (int j = 0; j < 16; j++)
+                        sb.append(Character.forDigit((cmds[p + 8 + j] >> 4) & 15, 16)).append(Character.forDigit(cmds[p + 8 + j] & 15, 16));
+                    return sb.toString();
+                }
+                if (size <= 0) break;
+                p += size;
+            }
+        } catch (IOException ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * The imported game is another build than FTL for iPad 1.6.21. It runs, but
+     * Hyperspace and the extras that hook the game's code (mods' pictures, the
+     * two-finger pause, Back, keyboard shortcuts) only know 1.6.21.
+     */
+    static boolean isOtherBuild(Context ctx) {
+        return isInstalled(ctx) && !SUPPORTED_BUILD.equals(buildId(ctx));
+    }
+
+    /** The game's version from its Info.plist (imported since 0.4.2), or null. */
+    static String version(Context ctx) {
+        File f = new File(gameDir(ctx), "Info.plist");
+        if (!f.isFile() || f.length() > 1 << 20) return null;
+        byte[] b = new byte[(int) f.length()];
+        try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
+            r.readFully(b);
+        } catch (IOException e) {
+            return null;
+        }
+        try {
+            if (b.length > 40 && new String(b, 0, 8, StandardCharsets.US_ASCII).equals("bplist00"))
+                return binaryPlistString(b, "CFBundleShortVersionString");
+        } catch (RuntimeException badPlist) {
+            return null;
+        }
+        Matcher m = Pattern.compile("<key>CFBundleShortVersionString</key>\\s*<string>([^<]{1,40})</string>")
+                .matcher(new String(b, StandardCharsets.UTF_8));
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    /** The player's copy of the game, for messages: its version when known. */
+    static String describeCopy(Context ctx) {
+        String v = version(ctx);
+        return v != null && !v.equals("1.6.21") ? ctx.getString(R.string.copy_version, v)
+                : ctx.getString(R.string.copy_other_build);
+    }
+
+    // A top-level string in a binary property list, as Xcode writes Info.plist.
+    // The trailer gives the sizes of offsets and object references, the object
+    // count, the top object (a dictionary here) and where the offset table is.
+    private static String binaryPlistString(byte[] b, String key) {
+        int n = b.length, offSize = b[n - 26] & 0xff, refSize = b[n - 25] & 0xff;
+        long count = be(b, n - 24, 8), table = be(b, n - 8, 8);
+        int top = (int) be(b, n - 16, 8);
+        int dict = (int) be(b, (int) table + top * offSize, offSize);
+        if ((b[dict] & 0xf0) != 0xd0) return null;
+        int[] len = plistLength(b, dict);
+        for (int i = 0; i < len[0]; i++) {
+            int k = (int) be(b, len[1] + i * refSize, refSize), v = (int) be(b, len[1] + (len[0] + i) * refSize, refSize);
+            if (k >= count || v >= count) return null;
+            if (key.equals(plistString(b, (int) be(b, (int) table + k * offSize, offSize))))
+                return plistString(b, (int) be(b, (int) table + v * offSize, offSize));
+        }
+        return null;
+    }
+
+    // An ASCII (0x5n) or UTF-16 (0x6n) string object, or null for other types
+    private static String plistString(byte[] b, int at) {
+        int type = b[at] & 0xf0;
+        int[] len = plistLength(b, at);
+        if (type == 0x50) return new String(b, len[1], len[0], StandardCharsets.US_ASCII);
+        if (type == 0x60) return new String(b, len[1], len[0] * 2, StandardCharsets.UTF_16BE);
+        return null;
+    }
+
+    // An object's length and where its contents start: the marker's low four bits,
+    // or when those are all set, an integer object (0x1n, 2^n bytes) after it
+    private static int[] plistLength(byte[] b, int at) {
+        int low = b[at] & 0x0f;
+        if (low != 0x0f) return new int[] {low, at + 1};
+        int bytes = 1 << (b[at + 1] & 0x0f);
+        return new int[] {(int) be(b, at + 2, bytes), at + 2 + bytes};
+    }
+
+    private static long be(byte[] b, int at, int size) {
+        long v = 0;
+        for (int i = 0; i < size; i++) v = v << 8 | (b[at + i] & 0xff);
+        return v;
+    }
+
+    // Where the arm64 code starts: 0 in a thin executable, its slice in a fat one, or -1
+    private static long arm64Slice(RandomAccessFile r) throws IOException {
+        r.seek(0);
+        if (r.readInt() != 0xCAFEBABE) return 0;
+        int n = r.readInt();
+        long slice = -1;
+        for (int i = 0; i < n; i++) {
+            int cpu = r.readInt();
+            r.readInt();
+            int off = r.readInt();
+            r.readInt();
+            r.readInt();
+            if (cpu == 0x0100000C) slice = off & 0xffffffffL;
+        }
+        return slice;
+    }
+
+    // The command count followed by the load commands, or null when the slice isn't
+    // 64-bit iOS code
+    private static byte[] loadCommands(RandomAccessFile r, long slice) throws IOException {
+        r.seek(slice);
+        byte[] hdr = new byte[32];
+        r.readFully(hdr);
+        if (le32(hdr, 0) != 0xFEEDFACF || le32(hdr, 4) != 0x0100000C) return null;
+        int ncmds = le32(hdr, 16), sizeofcmds = le32(hdr, 20);
+        if (sizeofcmds < 0 || sizeofcmds > 1 << 20) return null;
+        byte[] cmds = new byte[4 + sizeofcmds];
+        System.arraycopy(hdr, 16, cmds, 0, 4);
+        r.readFully(cmds, 4, sizeofcmds);
+        return cmds;
     }
 
     private static int le32(byte[] b, int o) {

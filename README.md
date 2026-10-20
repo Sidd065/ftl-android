@@ -22,8 +22,10 @@ The app doesn't include the game: you need your own copy of FTL for iPad.
 3. Pick a language and play.
 
 You need Android 8.0 or newer on a 64-bit phone, about 250 MB of free space,
-and FTL for iPad 1.6.21. Copies straight from the App Store are encrypted and
-won't work.
+and FTL for iPad 1.6.21, the version on the App Store now. Other versions start,
+but mods and some extras (the two-finger pause, Back, keyboard shortcuts) only
+work with 1.6.21. Copies straight from the App Store are encrypted and won't
+work.
 
 To update, install the new `.apk` over the old one. Your saves are kept.
 
@@ -165,6 +167,9 @@ the second finger pinches or pauses as usual.
 
 - "Still FairPlay-encrypted": that's the App Store copy of the game, which only
   runs on iOS.
+- "This isn't FTL for iPad 1.6.21": your copy is another version. It plays, but
+  mods need 1.6.21. Import that version with **Import game files again** in
+  settings; saves are kept. Settings shows which version you have.
 - Crashes and other bugs: in settings, tap **Save logs…** and attach the file to
   a [bug report](https://github.com/Sidd065/ftl-android/issues/new/choose).
 - Only tested on Snapdragon phones so far. Game Center is off, so achievements

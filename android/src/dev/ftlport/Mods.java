@@ -236,7 +236,8 @@ final class Mods {
     }
 
     // Opens a zip that should be a mod, refusing mods made for Hyperspace unless this
-    // build carries it (the game then loads it while Hyperspace.ftl is applied).
+    // build carries it (the game then loads it while Hyperspace.ftl is applied) and
+    // the game is the build Hyperspace knows.
     private static ZipFile open(Context ctx, File f, String name) throws IOException {
         ZipFile z;
         try {
@@ -247,6 +248,10 @@ final class Mods {
         if (needsHyperspace(z) && SettingsActivity.hyperspaceLib(ctx) == null) {
             z.close();
             throw new HyperspaceException(ctx.getString(R.string.mods_hyperspace, name));
+        }
+        if (needsHyperspace(z) && Importer.isOtherBuild(ctx)) {
+            z.close();
+            throw new HyperspaceException(ctx.getString(R.string.mods_hyperspace_build, name, Importer.describeCopy(ctx)));
         }
         return z;
     }

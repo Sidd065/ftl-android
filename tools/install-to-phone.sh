@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installs the FTL port on a phone connected with USB (or wireless) debugging and,
-# given your copy of the iPad game, copies the two game files to where the app
+# given your copy of the iPad game, copies the game files to where the app
 # imports them automatically on first launch.
 #
 #   tools/install-to-phone.sh [GAME]
@@ -36,15 +36,17 @@ if [ -d "$GAME" ]; then
   sleep 2
   "$ADB" shell am force-stop $PKG
   dest=/sdcard/Android/data/$PKG/files
+  files=(FTL ftl.dat)
+  [ -f "$app/Info.plist" ] && files+=(Info.plist)  # the game's version, for settings and logs
   echo "== copying game files from $app"
-  if "$ADB" push "$app/FTL" "$app/ftl.dat" "$dest/"; then
+  if "$ADB" push "${files[@]/#/$app/}" "$dest/"; then
     echo "== starting FTL (it imports the files on launch; the first start takes a little while)"
     "$ADB" shell am start -n $PKG/.GameActivity >/dev/null
     exit 0
   fi
   echo "Couldn't copy into the app's folder on this Android version; zipping and using Downloads instead."
   tmp=$(mktemp -d)
-  (cd "$app/.." && zip -q -0 -r "$tmp/ftl-ipad.zip" "$(basename "$app")/FTL" "$(basename "$app")/ftl.dat")
+  (cd "$app/.." && zip -q -0 -r "$tmp/ftl-ipad.zip" "${files[@]/#/$(basename "$app")/}")
   GAME="$tmp/ftl-ipad.zip"
 fi
 

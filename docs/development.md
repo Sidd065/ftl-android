@@ -61,9 +61,11 @@ aspect ratio. It lays out a canvas 768 units tall and as wide as the screen,
 rendered at 1536 pixels tall on most phones so text stays sharp when zoomed.
 
 A few features hook specific addresses in the 1.6.21 binary (the logger, the
-pause action, hotkey lookup, menu and window state, and the ftl.dat reader for
-mods). They're only enabled when the binary's LC_UUID matches that build. Other
-versions of the game would run without them.
+pause action, hotkey lookup, menu and window state, the PNG reader and the
+ftl.dat reader for mods). They're only enabled when the binary's LC_UUID matches
+that build, and Hyperspace only starts on it. Other versions run without them:
+the app tells the player once, refuses mods that need Hyperspace, and shows the
+version (from Info.plist) in settings and the build in the logs.
 
 ## Mods
 

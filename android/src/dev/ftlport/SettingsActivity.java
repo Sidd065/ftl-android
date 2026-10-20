@@ -43,6 +43,7 @@ public class SettingsActivity extends Activity {
     static final String K_PAD_MAGNETISM = "pad_magnetism";  // boolean: the cursor is drawn to buttons
     static final String K_PAD_RUMBLE = "pad_rumble";        // boolean
     static final String K_PAD_TOUCHPAD = "pad_touchpad";    // boolean: DualSense / DualShock touchpad moves it
+    static final String K_OTHER_BUILD = "other_build_noted"; // String: the other build the player was told about
 
     private static final int REQ_EXPORT = 1, REQ_IMPORT = 2, REQ_LOGS = 3;
 
@@ -127,6 +128,10 @@ public class SettingsActivity extends Activity {
 
         section(R.string.set_files);
         text(R.string.set_files_desc, 14, 0xFF90A4AE);
+        if (Importer.isOtherBuild(this))
+            text(R.string.set_files_other, 14, 0xFFFFCC80).setText(getString(R.string.set_files_other, Importer.describeCopy(this)));
+        else if (Importer.isInstalled(this))
+            text(R.string.set_files_ok, 14, 0xFF90A4AE);
         button(R.string.set_reimport, v -> confirmReimport());
 
         section(R.string.set_logs);

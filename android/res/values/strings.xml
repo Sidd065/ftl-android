@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">FTL</string>
     <string name="import_title">FTL for Android</string>
-    <string name="import_body">This port runs the iPad version of FTL: Faster Than Light. It doesn\'t include the game itself.\n\nSelect your copy of the iPad app (an .ipa file, or a .zip of it), or a folder containing the extracted FTL.app. Only the files FTL and ftl.dat are copied into the app\'s private storage.</string>
+    <string name="import_body">This port runs the iPad version of FTL: Faster Than Light. It doesn\'t include the game itself.\n\nSelect your copy of the iPad app (an .ipa file, or a .zip of it), or a folder containing the extracted FTL.app. Only the files FTL, ftl.dat and Info.plist are copied into the app\'s private storage.</string>
     <string name="import_pick_ipa">Select .ipa / .zip file</string>
     <string name="import_pick_folder">Select extracted FTL.app folder</string>
     <string name="import_checking">Looking for game files…</string>
@@ -46,6 +46,8 @@
     <string name="set_controls_body">• Tap works like on the iPad.\n• Hold a finger to see the magnifier, slide onto small buttons, then lift.\n• Pinch to zoom in (up to 3×). Drag with two fingers to look around. Tap the minimap or pinch out to zoom back.\n• Two-finger tap: pause or resume.\n• Hold a finger still, then tap with another: a right click where the first finger is, for mods that use one (keep the second finger down and move the first to drag).\n• Back: closes the open window or opens the game menu. On the title screen it asks to quit.\n• Keyboard: Space pauses, 1–8 power weapons and drones (Shift removes power), A/S/D/F/W/E… power systems, J jump, U upgrades, C crew, I cargo, Z/X open or close all doors, \\ opens the command console when a mod turns it on (Multiverse does). \n• Mouse: left button taps and drags, right button is Back (a right click for mods that use one), the wheel zooms.\n• Game controller: the left stick or the d-pad moves a cursor and A taps there; the cursor is drawn to things you can tap. B and Start are Back, X pauses, LB and RB zoom, the right stick looks around, holding LT shows the magnifier and RT is a right click for mods. The buttons can be changed below.</string>
     <string name="set_files">Game files</string>
     <string name="set_files_desc">The imported copy of FTL lives in the app\'s private storage. Your saves and settings are kept when you import again.</string>
+    <string name="set_files_ok">Your copy is FTL for iPad 1.6.21, the version the app is made for.</string>
+    <string name="set_files_other">%1$s The app is made for 1.6.21: on this copy, mods that need Hyperspace can\'t run and some extras are off.</string>
     <string name="set_reimport">Import game files again…</string>
     <string name="set_reimport_confirm">This removes the imported game files and restarts the app at the import screen. Saves are kept.</string>
     <string name="set_reimport_yes">Remove and restart</string>
@@ -110,6 +112,15 @@
     <string name="hang_close">Close FTL</string>
     <string name="hang_wait">Wait</string>
     <string name="mods_hyperspace">%1$s needs Hyperspace, which can\'t work here: it changes the PC game\'s code, not its data.</string>
+    <string name="mods_hyperspace_build">%1$s needs Hyperspace, which only runs on FTL for iPad 1.6.21. %2$s</string>
+    <string name="mods_about_other_build">Mods that need Hyperspace, like Multiverse, only run on FTL for iPad 1.6.21. %1$s Other mods may only partly work on it, since the pictures they add can\'t be shown.</string>
+    <string name="copy_version">Your copy is version %1$s.</string>
+    <string name="copy_other_build">Your copy is a different build.</string>
+    <string name="other_build_title">This isn\'t FTL for iPad 1.6.21</string>
+    <string name="other_build_body">The app is made for FTL for iPad 1.6.21, the version on the App Store now. %1$s\n\nThe game runs, but mods that need Hyperspace can\'t, other mods can\'t show the pictures they add, and the two-finger pause, Back and keyboard shortcuts are off. To get them, import version 1.6.21 with Import game files again in settings.</string>
+    <string name="hs_build_title">These mods need FTL for iPad 1.6.21</string>
+    <string name="hs_build_body">The applied mods need Hyperspace, which only runs on FTL for iPad 1.6.21, the version on the App Store now. %1$s\n\nPlay without the mods, or import version 1.6.21 with Import game files again in settings.</string>
+    <string name="hs_build_play">Play without mods</string>
     <string name="mods_is_game">%1$s is the game itself, not a mod.</string>
     <string name="mods_game_already">That\'s the game itself, not a mod, and FTL is already imported. To import it again, use Import game files again in settings.</string>
     <string name="mods_added_one">Added %1$s. Tap Apply and restart to use it.</string>

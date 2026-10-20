@@ -250,6 +250,12 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
 
     // ------------------------------------------------------------------ game
     private void startGame() {
+        // Hyperspace only knows FTL for iPad 1.6.21. With another build it can't start,
+        // so ask about the mods rather than start a game that stops at once.
+        if (!sNativeStarted && Importer.isOtherBuild(this) && Mods.hyperspaceApplied(this)) {
+            askAboutHyperspaceMods();
+            return;
+        }
         if (!mLibLoaded) {
             System.loadLibrary("ftlport");
             mLibLoaded = true;
@@ -407,6 +413,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
                     !crashed && !modsChanged && prefs.getBoolean(SettingsActivity.K_RESUME, false) ? 1 : 0);
             scanPads();
             if (crashed) mMain.postDelayed(this::offerCrashLogs, 1500);
+            else if (Importer.isOtherBuild(this)) mMain.postDelayed(this::noteOtherBuild, 1500);
         }
         // The game runs at 60 fps; let 90/120 Hz panels drop to 60 Hz while it's on screen.
         if (Build.VERSION.SDK_INT >= 30) {
@@ -848,6 +855,39 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
                     .create();
             showDialog(d);
         });
+    }
+
+    // Hyperspace mods are applied, but the game isn't the build Hyperspace knows.
+    private void askAboutHyperspaceMods() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.hs_build_title)
+                .setMessage(getString(R.string.hs_build_body, Importer.describeCopy(this)))
+                .setCancelable(false)
+                .setPositiveButton(R.string.hs_build_play, (d, w) -> {
+                    Mods.turnOff(this);
+                    startGame();
+                })
+                .setNeutralButton(R.string.settings_short, (d, w) -> {
+                    startActivity(new Intent(this, SettingsActivity.class));
+                    finish();
+                })
+                .setNegativeButton(R.string.hang_close, (d, w) -> finishAndRemoveTask())
+                .show();
+    }
+
+    // The game isn't the 1.6.21 build: say once what that means, for each build imported.
+    private void noteOtherBuild() {
+        if (isFinishing()) return;
+        SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
+        String build = String.valueOf(Importer.buildId(this));
+        if (build.equals(prefs.getString(SettingsActivity.K_OTHER_BUILD, null))) return;
+        prefs.edit().putString(SettingsActivity.K_OTHER_BUILD, build).apply();
+        showDialog(new AlertDialog.Builder(this)
+                .setTitle(R.string.other_build_title)
+                .setMessage(getString(R.string.other_build_body, Importer.describeCopy(this)))
+                .setPositiveButton(android.R.string.ok, null)
+                .setOnDismissListener(dlg -> enterImmersive())
+                .create());
     }
 
     // The game crashed last time: say so once, and offer the log.

@@ -128,6 +128,11 @@ final class Logs {
         sb.append("display ").append(dm.widthPixels).append('x').append(dm.heightPixels)
                 .append(" @ ").append(dm.densityDpi).append(" dpi\n");
         sb.append("game files ").append(Importer.isInstalled(ctx) ? "imported" : "missing").append('\n');
+        if (Importer.isInstalled(ctx)) {
+            String v = Importer.version(ctx);
+            sb.append("game version ").append(v != null ? v : "unknown").append(", build ").append(Importer.buildId(ctx))
+                    .append(Importer.isOtherBuild(ctx) ? " (not the 1.6.21 build)" : " (1.6.21)").append('\n');
+        }
         SharedPreferences prefs = ctx.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet())
             sb.append("setting ").append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
