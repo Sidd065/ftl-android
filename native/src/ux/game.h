@@ -90,10 +90,18 @@
 #define DOOR_X 0x2b0                // Door: int x, y (its middle), bool vertical
 #define DOOR_Y 0x2b4
 #define DOOR_VERTICAL 0x2b8
+#define CREW_OWNER 0x8              // CrewMember: int, whose crew they are (0: the player's)
 #define CREW_X 0xc                  // CrewMember: float x, y (ship coordinates)
 #define CREW_Y 0x10
+#define CREW_LAST_DOOR 0x80         // CrewMember: Door *, the one they're walking through
 #define CREW_SHIP 0x1ac             // CrewMember: int, the ship they're on (0: the player's)
+#define CREW_TARGET 0x1d8           // CrewMember: CrewTarget *, what they're attacking (a Door's is at +0)
+#define CREW_BLOCKING_DOOR 0x238    // CrewMember: Door *, a sealed door in their way
+#define CREW_SPECIES 0x248          // CrewMember: std::string
 #define CREW_DEAD 0x260             // CrewMember: bool
+#define G_CREW_FACTORY 0x10023f638ull  // CrewMemberFactory, which owns every crew member
+#define FACTORY_CREW 0x10           // CrewMemberFactory: std::vector<CrewMember *>
+#define G_DOOR_DESTROY 0x1001188acull  // Door::~Door's body, which every destructor variant calls
 #define SYSTEM_HEALTH 0x224         // ShipSystem: int health, max health
 #define WEAPONS_LIST 0x310          // WeaponSystem: std::vector<ProjectileFactory *>
 #define WEAPON_QUEUED 0x718         // ProjectileFactory: std::vector<Projectile *>, shots fired, not yet out

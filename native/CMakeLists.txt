@@ -30,6 +30,7 @@ set(CORE_SOURCES
     src/ux/overlay.c
     src/ux/mods.c
     src/ux/png.c
+    src/ux/fixes.c
 )
 
 set(COMMON_FLAGS -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers

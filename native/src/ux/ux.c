@@ -7,7 +7,7 @@
 //    (desktop-heritage) key and mouse events
 //  - the beacon map and the upgrade screen zoomed in on phones (events too, as
 //    an option); event text size; continuing the saved run at launch
-//  - game logger hook for diagnostics; mods (mods.c)
+//  - game logger hook for diagnostics; mods (mods.c); fixes for the game's own bugs (fixes.c)
 #include "ux.h"
 
 #include <math.h>
@@ -24,6 +24,7 @@
 #include "../patches.h"
 #include "../platform/platform.h"
 #include "../port_main.h"
+#include "fixes.h"
 #include "game.h"
 #include "mods.h"
 #include "overlay.h"
@@ -175,6 +176,7 @@ int ux_patches_apply(mo_image *img) {
     } else
         LOGW("ux: unexpected code in door hotkeys; Z/X only work in door mode");
     fails += png_install(img) != 0;
+    fails += fixes_install(img) != 0;
     if (targets_install(img) == 0) targets_set_frame_fn(pad_frame);
     if (mods_install(img, port_mods_index()) != 0) LOGW("ux: mods could not be loaded; playing without them");
     return fails ? -1 : 0;
