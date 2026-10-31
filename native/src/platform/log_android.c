@@ -3,7 +3,9 @@
 // crash handler leaves a marker so the app can offer the log on the next start.
 #include <dirent.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -16,10 +18,16 @@
 
 #define KEEP_SESSIONS 5
 #define MAX_SESSION_BYTES (8 << 20)
+#define MAX_ERROR_BYTES (1 << 20)  // room for errors past the cap
 
 static int g_fd = -1;
 static size_t g_bytes;
+static bool g_cut;
 static char g_crash_path[600];
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+static char g_last[1024];  // the last line written, and how often it came again since
+static int g_last_prio;
+static unsigned g_repeats;
 
 static int by_name(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 
@@ -91,6 +99,36 @@ void port_memory(long *free_mb, long *total_mb, long *game_mb) {
     *game_mb = rss >> 10;
 }
 
+// One line into the session log. The size cap is soft, so a runaway message can't fill
+// the storage; past it only errors go in, so a crash report still makes it.
+static void put(int prio, const char *msg) {
+    bool error = prio >= ANDROID_LOG_ERROR;
+    if (g_bytes > MAX_SESSION_BYTES && !error) {
+        if (!g_cut) {
+            static const char cut[] = "(log cut here: too long; only errors from here on)\n";
+            g_cut = true;
+            ssize_t w = write(g_fd, cut, sizeof cut - 1);
+            (void)w;
+        }
+        return;
+    }
+    if (g_bytes > MAX_SESSION_BYTES + MAX_ERROR_BYTES) return;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm tm;
+    localtime_r(&tv.tv_sec, &tm);
+    char line[1100];
+    int n = snprintf(line, sizeof line, "%02d:%02d:%02d.%03d %c %s\n", tm.tm_hour, tm.tm_min, tm.tm_sec,
+                     (int)(tv.tv_usec / 1000), error ? 'E' : prio == ANDROID_LOG_WARN ? 'W' : 'I', msg);
+    if (n >= (int)sizeof line) {
+        n = sizeof line - 1;
+        line[n - 1] = '\n';
+    }
+    g_bytes += n;
+    ssize_t w = write(g_fd, line, n);
+    (void)w;
+}
+
 void port_log(int prio, const char *fmt, ...) {
     char msg[1024];
     va_list ap;
@@ -98,27 +136,28 @@ void port_log(int prio, const char *fmt, ...) {
     vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
     __android_log_write(prio, PORT_TAG, msg);
-    if (g_fd < 0 || g_bytes > MAX_SESSION_BYTES) return;
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    struct tm tm;
-    localtime_r(&tv.tv_sec, &tm);
-    char line[1100];
-    int n = snprintf(line, sizeof line, "%02d:%02d:%02d.%03d %c %s\n", tm.tm_hour, tm.tm_min, tm.tm_sec,
-                     (int)(tv.tv_usec / 1000), prio >= ANDROID_LOG_ERROR ? 'E' : prio == ANDROID_LOG_WARN ? 'W' : 'I',
-                     msg);
-    if (n >= (int)sizeof line) {
-        n = sizeof line - 1;
-        line[n - 1] = '\n';
+    if (g_fd < 0) return;
+    // A line that comes again and again (the game asks every frame for text a mod left
+    // out) is written once and then counted, so it can't push the rest out of the log.
+    // Never wait for the lock: a crash report can come from inside a log call.
+    bool locked = pthread_mutex_trylock(&g_lock) == 0;
+    if (locked) {
+        if (prio == g_last_prio && !strcmp(msg, g_last)) {
+            g_repeats++;
+            pthread_mutex_unlock(&g_lock);
+            return;
+        }
+        if (g_repeats) {
+            char note[64] = "(the line above came once more)";
+            if (g_repeats > 1) snprintf(note, sizeof note, "(the line above came %u more times)", g_repeats);
+            put(g_last_prio, note);
+            g_repeats = 0;
+        }
+        snprintf(g_last, sizeof g_last, "%s", msg);
+        g_last_prio = prio;
     }
-    g_bytes += n;  // a soft cap, so a runaway message can't fill the storage
-    if (g_bytes > MAX_SESSION_BYTES) {
-        static const char cut[] = "(log cut here: too long)\n";
-        n = sizeof cut - 1;
-        memcpy(line, cut, n);
-    }
-    ssize_t w = write(g_fd, line, n);
-    (void)w;
+    put(prio, msg);
+    if (locked) pthread_mutex_unlock(&g_lock);
 }
 
 void port_log_mark_crash(void) {
