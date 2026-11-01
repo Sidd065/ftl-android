@@ -194,16 +194,21 @@ int mo_load(const char *path, mo_image *img) {
     // Reserve one region for all segments, 16K aligned (iOS page size).
     const size_t align = 0x4000;
     size_t span = (size_t)(hi - lo);
-    // Extra room after the image for "near" trampolines reachable by a 4-byte b.
-    const size_t tramp_size = 0x40000;
-    size_t reserve = span + tramp_size + align;
+    // Extra room after the image for "near" trampolines reachable by a 4-byte b: ours,
+    // then Hyperspace's. Hyperspace loads later, when the space near the game is often
+    // all taken (on some phones the game lands next to one of ART's 1 GB regions).
+    const size_t tramp_size = 0x40000, hook_area_size = 0x100000;
+    size_t reserve = span + tramp_size + hook_area_size + align;
     uint8_t *raw = mmap(NULL, reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (raw == MAP_FAILED) { LOGE("macho: mmap %zu failed", reserve); return -1; }
     uint8_t *base = (uint8_t *)(((uintptr_t)raw + align - 1) & ~(uintptr_t)(align - 1));
+    uint8_t *tail = base + span + tramp_size + hook_area_size;
     if (base > raw) munmap(raw, (size_t)(base - raw));
-    munmap(base + span + tramp_size, (size_t)(raw + reserve - (base + span + tramp_size)));
+    munmap(tail, (size_t)(raw + reserve - tail));
     img->near_tramp = base + span;
     img->near_tramp_size = tramp_size;
+    img->hook_area = base + span + tramp_size;
+    img->hook_area_size = hook_area_size;
 
     img->base = base;
     img->vmaddr_min = lo;

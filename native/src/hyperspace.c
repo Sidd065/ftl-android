@@ -46,6 +46,8 @@ int hyperspace_start(const char *lib, const char *log_dir, const char *data_dir,
         .data_dir = data_dir,
         .log = hs_log,
         .find_macho_unwind = __ftl_find_macho_unwind,
+        .hook_area = img->hook_area,
+        .hook_area_size = img->hook_area_size,
     };
     char why[1024] = "";
     if (init(&info, why, sizeof why) != 0) {

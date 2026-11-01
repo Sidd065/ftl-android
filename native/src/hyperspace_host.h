@@ -35,6 +35,12 @@ typedef struct hs_host_info
        sides are built with. Returns 0 when pc is not in the game. */
     int (*find_macho_unwind)(uintptr_t pc, uintptr_t *mh, uintptr_t *text_len, uintptr_t *compact_unwind,
                              size_t *compact_unwind_len, uintptr_t *eh_frame, size_t *eh_frame_len);
+
+    /* Memory the port keeps free next to the game for the hook trampolines. Optional:
+       a size that doesn't reach these fields means the port is older and has none, and
+       Hyperspace then looks for room near the game itself. */
+    void *hook_area;
+    size_t hook_area_size;
 } hs_host_info;
 
 /* Returns 0 once Hyperspace's hooks are in place. Otherwise writes the reason to

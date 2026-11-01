@@ -38,6 +38,8 @@ typedef struct mo_image {
     uint32_t fstarts_off, fstarts_size;
     uint8_t *near_tramp;  // RX after mo_protect; trampolines within +-128MB of the code
     size_t near_tramp_size, near_tramp_used;
+    uint8_t *hook_area;   // after near_tramp, kept for Hyperspace's trampolines
+    size_t hook_area_size;
 } mo_image;
 
 // Resolve an imported symbol. `dylib` is the install name it is imported from (may be NULL).
