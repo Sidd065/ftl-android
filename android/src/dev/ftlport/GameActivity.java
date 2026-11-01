@@ -266,6 +266,9 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         mSurface.setOnCapturedPointerListener((v, e) -> onCapturedPointer(e));
         mSurface.setFocusable(true);
         mSurface.setFocusableInTouchMode(true);
+        // Opened with a controller, the window starts out of touch mode, and Android would
+        // draw its focus highlight over the whole game until the app is closed
+        mSurface.setDefaultFocusHighlightEnabled(false);
         setContentView(mSurface);
         enterImmersive();
         if (sNativeStarted) nativeAttach();
