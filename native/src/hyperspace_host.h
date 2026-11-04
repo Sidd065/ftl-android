@@ -1,7 +1,7 @@
 /* Copy of src/android/HyperspaceHost.h from Hyperspace (the fork and commit in
    hyperspace/source.sh). Keep the two in step; HS_HOST_VERSION guards against mismatches.
-   Hyperspace's copy has optional fields after unwind_info for other ports; this app
-   doesn't pass them (size = sizeof info tells Hyperspace so). */
+   Hyperspace's copy has more optional fields after hook_area_size for other ports;
+   this app doesn't pass them (size = sizeof info tells Hyperspace so). */
 #pragma once
 
 #include <stddef.h>
