@@ -6,8 +6,9 @@
 #   DEBUGGABLE=1 ./build-apk.sh   -> marks the APK debuggable (adb run-as can reach saves; code stays optimized)
 #     (taken from your copy at build time; never stored in the repo or the default APK)
 # ftlman, which installs mods, is built separately with ftlman/build.sh (FTLMAN=path to override).
-#   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> also carries Hyperspace, which a
-#     setting (off by default) loads; built from FTL-Hyperspace's android-arm64 branch
+#   HYPERSPACE=1 ./build-apk.sh   -> also carries Hyperspace, built from source by
+#     hyperspace/build-android.sh (the fork and commit in hyperspace/source.sh)
+#   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> carries that build instead
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
@@ -21,6 +22,11 @@ LIBCXX_DIR=${LIBCXX_DIR:-$HOME/ftl-build/libcxx/android}
 KEYSTORE=${KEYSTORE:-$HOME/ftl-build/keys/ftlport.keystore}
 FTLMAN=${FTLMAN:-$HOME/ftl-build/ftlman/libftlman.so}
 BUILD_TYPE=${1:-release}
+if [ "${HYPERSPACE:-}" = 1 ] && [ -z "${HYPERSPACE_SO:-}" ]; then
+  HS_OUT=${HS_OUT:-$HOME/ftl-build/hyperspace-android}
+  HS_OUT=$HS_OUT "$ROOT/hyperspace/build-android.sh"
+  HYPERSPACE_SO=$HS_OUT/libHyperspace.so
+fi
 # A build with the game's icon is for your own device only; keep it apart.
 APK_NAME=$([ -n "${GAME_APP:-}" ] && echo ftl-personal.apk || echo ftlport.apk)
 

@@ -182,6 +182,8 @@ Subset Games; the mods in the screenshots, and their artwork, by their own
 authors (linked above). This project isn't affiliated with or endorsed by them.
 
 This project is licensed under the GNU General Public License, version 3 (see
-[LICENSE](LICENSE)). The app also includes Hyperspace (GPL version 3 or later)
-and ftlman (GPL version 2); their source, as built for each release, is attached
-to the release.
+[LICENSE](LICENSE)). The app also includes Hyperspace (GPL version 3), built
+from the
+[`iOS-binary-ports`](https://github.com/The-Dumb-Dino/FTL-Hyperspace-Dino/tree/iOS-binary-ports)
+branch of FTL-Hyperspace-Dino, and ftlman (GPL version 2); their source, as
+built for each release, is attached to the release.

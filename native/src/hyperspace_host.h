@@ -1,5 +1,7 @@
-/* Copy of src/android/HyperspaceHost.h from Hyperspace (github.com/Sidd065/FTL-Hyperspace,
-   branch android-arm64). Keep the two in step; HS_HOST_VERSION guards against mismatches. */
+/* Copy of src/android/HyperspaceHost.h from Hyperspace (the fork and commit in
+   hyperspace/source.sh). Keep the two in step; HS_HOST_VERSION guards against mismatches.
+   Hyperspace's copy has optional fields after unwind_info for other ports; this app
+   doesn't pass them (size = sizeof info tells Hyperspace so). */
 #pragma once
 
 #include <stddef.h>

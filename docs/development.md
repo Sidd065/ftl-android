@@ -28,7 +28,8 @@ Optional build variables:
   Without it the app gets a plain icon, so the repo itself has no game art.
 - `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
   can reach the save files.
-- `HYPERSPACE_SO=/path/to/libHyperspace.so` adds Hyperspace (see below).
+- `HYPERSPACE=1` adds Hyperspace, built from source (see below);
+  `HYPERSPACE_SO=/path/to/libHyperspace.so` adds a build of it you already have.
 
 ## Installing from a computer
 
@@ -95,10 +96,16 @@ Mods for Hyperspace need an APK that carries Hyperspace (see below).
 ## Hyperspace
 
 [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) extends FTL by
-hooking the game's functions in memory; big mods like Multiverse need it. Its
-Android build is the `android-arm64` branch of FTL-Hyperspace, and each release
-that carries it attaches the source it was built from (`buildscripts/android/`
-in it explains how to build it and what works). An APK built with `HYPERSPACE_SO` carries it as
+hooking the game's functions in memory; big mods like Multiverse need it. The
+iPad game's Hyperspace, for this app and the other ports of the iPad game
+(Linux, Switch), is the `iOS-binary-ports` branch of
+[FTL-Hyperspace-Dino](https://github.com/The-Dumb-Dino/FTL-Hyperspace-Dino/tree/iOS-binary-ports)
+(`buildscripts/android/` in it explains how to build it and what works).
+`hyperspace/build-android.sh` builds the commit pinned in `hyperspace/source.sh`
+(`HS_REPO` and `HS_REF` pick another) and packs its source as
+`FTL-Hyperspace-<commit>-source.tar.gz` next to the library, for releases to
+attach. Besides the app's tools it needs swig and Lua 5.3 with lpeg and lfs.
+An APK built with `HYPERSPACE=1` (or `HYPERSPACE_SO`) carries it as
 `libHyperspace.so`, and Settings gets a "Hyperspace (experimental)" switch,
 off by default. When it's on, `hyperspace.c` loads the library once the game
 is mapped, linked and protected, before any game code runs, and calls its
