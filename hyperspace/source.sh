@@ -3,8 +3,8 @@
 # REF is pinned to a commit so a build always gets the same Hyperspace; move it on
 # deliberately. HS_REPO and HS_REF pick another clone, branch or commit (a commit
 # by its full hash: git fetches no abbreviated ones).
-REPO=${HS_REPO:-https://github.com/The-Dumb-Dino/FTL-Hyperspace-Dino.git}
-REF=${HS_REF:-59bd00458c606086321568532f0c4b5e817d802a}  # branch iOS-binary-ports
+REPO=${HS_REPO:-https://github.com/Sidd065/FTL-Hyperspace.git}
+REF=${HS_REF:-31b2e718849f585e18dbc8c343669a452c1c6c0b}  # branch fix-enemy-status-box, until iOS-binary-ports has it
 
 # Checks out REF in SRC, fetching only that commit
 hs_checkout() {
