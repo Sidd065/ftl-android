@@ -28,7 +28,9 @@ Optional build variables:
   Without it the app gets a plain icon, so the repo itself has no game art.
 - `DEBUGGABLE=1` marks the APK debuggable, so `adb shell run-as dev.ftlport`
   can reach the save files.
-- `HYPERSPACE_SO=/path/to/libHyperspace.so` adds Hyperspace (see below).
+- `HYPERSPACE=1` adds Hyperspace, built from source (see below);
+  `HYPERSPACE_SO=/path/to/libHyperspace.so` adds a build of it you already have.
+- `RELEASE=1` makes a release, which looks for updates (see below).
 
 ## Installing from a computer
 
@@ -95,10 +97,16 @@ Mods for Hyperspace need an APK that carries Hyperspace (see below).
 ## Hyperspace
 
 [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) extends FTL by
-hooking the game's functions in memory; big mods like Multiverse need it. Its
-Android build is the `android-arm64` branch of FTL-Hyperspace, and each release
-that carries it attaches the source it was built from (`buildscripts/android/`
-in it explains how to build it and what works). An APK built with `HYPERSPACE_SO` carries it as
+hooking the game's functions in memory; big mods like Multiverse need it. The
+iPad game's Hyperspace, for this app and the other ports of the iPad game
+(Linux, Switch), is the `iOS-binary-ports` branch of
+[FTL-Hyperspace-Dino](https://github.com/The-Dumb-Dino/FTL-Hyperspace-Dino/tree/iOS-binary-ports)
+(`buildscripts/android/` in it explains how to build it and what works).
+`hyperspace/build-android.sh` builds the commit pinned in `hyperspace/source.sh`
+(`HS_REPO` and `HS_REF` pick another) and packs its source as
+`FTL-Hyperspace-<commit>-source.tar.gz` next to the library, for releases to
+attach. Besides the app's tools it needs swig and Lua 5.3 with lpeg and lfs.
+An APK built with `HYPERSPACE=1` (or `HYPERSPACE_SO`) carries it as
 `libHyperspace.so`, and Settings gets a "Hyperspace (experimental)" switch,
 off by default. When it's on, `hyperspace.c` loads the library once the game
 is mapped, linked and protected, before any game code runs, and calls its
@@ -109,6 +117,26 @@ game. For mods' right clicks, `ux.c` asks it whether a script listens for the
 right button (`hs_android_wants_right_click`) and, if so, sends it the gesture
 (one finger held, a tap with another) and a mouse's right button
 (`hs_android_right_button`).
+
+## Releases and the updater
+
+`RELEASE=1 android/build-apk.sh` builds a release (`versionName` in the manifest
+must be X.Y.Z). Only releases have the updater: at start, while "Look for
+updates" is on in Settings, the app asks GitHub for the latest release of
+[Sidd065/ftl-android](https://github.com/Sidd065/ftl-android/releases)
+(`UPDATE_REPO_OVERRIDE=owner/repo` for another). When its tag is newer than the
+app's version, the player can update, wait, or skip that version. The app
+downloads the release's `.apk` (the first asset whose name ends in `.apk`),
+checks its size and SHA-256 against what GitHub lists, and hands it to
+Android's package installer (`Updater.java`). Android asks the player to
+confirm, and the first time to allow FTL to install apps; it only installs an
+APK signed with the same key as the installed app.
+
+So a release needs a tag `vX.Y.Z` matching `versionName`, published as a
+normal release (drafts and pre-releases aren't offered), with one `.apk`
+attached. A release APK asks for two more permissions, the network and
+installing apps; builds without `RELEASE=1` ask for neither and never contact
+GitHub.
 
 ## Testing
 

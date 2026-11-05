@@ -6,8 +6,10 @@
 #   DEBUGGABLE=1 ./build-apk.sh   -> marks the APK debuggable (adb run-as can reach saves; code stays optimized)
 #     (taken from your copy at build time; never stored in the repo or the default APK)
 # ftlman, which installs mods, is built separately with ftlman/build.sh (FTLMAN=path to override).
-#   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> also carries Hyperspace, which a
-#     setting (off by default) loads; built from FTL-Hyperspace's android-arm64 branch
+#   HYPERSPACE=1 ./build-apk.sh   -> also carries Hyperspace, built from source by
+#     hyperspace/build-android.sh (the fork and commit in hyperspace/source.sh)
+#   HYPERSPACE_SO=/path/to/libHyperspace.so ./build-apk.sh   -> carries that build instead
+#   RELEASE=1 ./build-apk.sh   -> a release: offers newer GitHub releases at start (Updater.java)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
@@ -21,6 +23,20 @@ LIBCXX_DIR=${LIBCXX_DIR:-$HOME/ftl-build/libcxx/android}
 KEYSTORE=${KEYSTORE:-$HOME/ftl-build/keys/ftlport.keystore}
 FTLMAN=${FTLMAN:-$HOME/ftl-build/ftlman/libftlman.so}
 BUILD_TYPE=${1:-release}
+VERSION=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' "$HERE/AndroidManifest.xml")
+# Only releases look for updates, and only in the official repository: builds of
+# your own (or of a fork) never offer someone else's APK.
+UPDATE_REPO=
+if [ "${RELEASE:-}" = 1 ]; then
+  UPDATE_REPO=${UPDATE_REPO_OVERRIDE:-Sidd065/ftl-android}
+  [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "RELEASE=1 needs versionName X.Y.Z (it is $VERSION)" >&2; exit 1; }
+  echo "release $VERSION, updates from github.com/$UPDATE_REPO"
+fi
+if [ "${HYPERSPACE:-}" = 1 ] && [ -z "${HYPERSPACE_SO:-}" ]; then
+  HS_OUT=${HS_OUT:-$HOME/ftl-build/hyperspace-android}
+  HS_OUT=$HS_OUT "$ROOT/hyperspace/build-android.sh"
+  HYPERSPACE_SO=$HS_OUT/libHyperspace.so
+fi
 # A build with the game's icon is for your own device only; keep it apart.
 APK_NAME=$([ -n "${GAME_APP:-}" ] && echo ftl-personal.apk || echo ftlport.apk)
 
@@ -59,8 +75,26 @@ if [ -n "${GAME_APP:-}" ]; then
   "$BT/aapt2" compile --dir "$WORK/res-game" -o "$WORK/res-game.zip"
   OVERLAY+=(--auto-add-overlay -R "$WORK/res-game.zip")
 fi
-mkdir -p "$WORK/gen"
-"$BT/aapt2" link -o "$WORK/base.apk" -I "$PLATFORM" --manifest "$HERE/AndroidManifest.xml" \
+MANIFEST=$HERE/AndroidManifest.xml
+if [ -n "$UPDATE_REPO" ]; then
+  # The updater needs the network and the right to install the new APK; other
+  # builds don't ask for either
+  MANIFEST=$WORK/AndroidManifest.xml
+  sed 's|^    <application$|    <uses-permission android:name="android.permission.INTERNET" />\
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\
+\
+    <application|' "$HERE/AndroidManifest.xml" > "$MANIFEST"
+  grep -q REQUEST_INSTALL_PACKAGES "$MANIFEST" || { echo "couldn't add the updater's permissions" >&2; exit 1; }
+fi
+mkdir -p "$WORK/gen/dev/ftlport"
+cat > "$WORK/gen/dev/ftlport/BuildInfo.java" <<JAVA
+package dev.ftlport;
+
+final class BuildInfo {
+    static final String UPDATE_REPO = "$UPDATE_REPO";  // "" except in release builds (RELEASE=1)
+}
+JAVA
+"$BT/aapt2" link -o "$WORK/base.apk" -I "$PLATFORM" --manifest "$MANIFEST" \
   --min-sdk-version 26 --target-sdk-version 35 --java "$WORK/gen" "$WORK/res.zip" "${OVERLAY[@]}"
 
 echo "== java"

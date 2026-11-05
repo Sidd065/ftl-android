@@ -134,6 +134,12 @@ public class SettingsActivity extends Activity {
             text(R.string.set_files_ok, 14, 0xFF90A4AE);
         button(R.string.set_reimport, v -> confirmReimport());
 
+        if (Updater.available()) {
+            section(R.string.set_updates);
+            toggle(R.string.set_check_updates, R.string.set_check_updates_desc, mPrefs.getBoolean(Updater.K_CHECK, true),
+                    v -> mPrefs.edit().putBoolean(Updater.K_CHECK, v).apply());
+        }
+
         section(R.string.set_logs);
         text(R.string.set_logs_desc, 14, 0xFF90A4AE);
         button(R.string.set_save_logs, v -> create(REQ_LOGS, Logs.exportName()));

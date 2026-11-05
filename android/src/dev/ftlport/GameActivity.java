@@ -96,6 +96,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         } else {
             tryAutoImportThenShowImporter();
         }
+        Updater.check(this);
     }
 
     // The .ipa someone opened with FTL (passed on by ModsActivity).
@@ -274,6 +275,11 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
         if (sNativeStarted) nativeAttach();
     }
 
+    // After a dialog of the updater's: back to full screen, if the game is showing
+    void dialogClosed() {
+        if (mSurface != null) enterImmersive();
+    }
+
     private void enterImmersive() {
         View decor = getWindow().getDecorView();
         if (Build.VERSION.SDK_INT >= 30) {
@@ -293,7 +299,7 @@ public class GameActivity extends Activity implements SurfaceHolder.Callback {
     // Show a dialog without bringing the system bars back: the dialog window
     // starts unfocusable (so it doesn't reset the bars), copies our immersive
     // state, then becomes focusable.
-    private void showDialog(AlertDialog d) {
+    void showDialog(AlertDialog d) {
         android.view.Window w = d.getWindow();
         if (w == null) {
             d.show();

@@ -129,6 +129,17 @@
     <string name="mods_apply_failed">The mods couldn\'t be applied, so nothing changed.\n\n%1$s</string>
     <string name="mods_no_space">Not enough free space to apply these mods: about %1$d MB more is needed.</string>
     <string name="crash_mods">Turn off mods</string>
+    <string name="set_updates">Updates</string>
+    <string name="set_check_updates">Look for updates</string>
+    <string name="set_check_updates_desc">When FTL starts, ask GitHub whether a newer version of the app is out, and offer to install it.</string>
+    <string name="update_title">Update available</string>
+    <string name="update_body">FTL %1$s is out (this is %2$s). Download and install it? FTL closes while Android installs it.</string>
+    <string name="update_now">Update</string>
+    <string name="update_later">Not now</string>
+    <string name="update_skip">Skip this version</string>
+    <string name="update_downloading">Downloading %1$s</string>
+    <string name="update_failed_title">The update didn\'t work</string>
+    <string name="update_failed_body">%1$s\n\nThis version keeps running. You can also download the update from the project\'s GitHub releases.</string>
     <string name="set_logs">Troubleshooting</string>
     <string name="set_logs_desc">FTL keeps a log of its last few sessions, including what happened in a crash. If something goes wrong, save the logs and attach them to an issue on GitHub.</string>
     <string name="set_save_logs">Save logs…</string>
