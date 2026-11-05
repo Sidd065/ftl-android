@@ -1,7 +1,8 @@
 # Sourced by build-android.sh: the Hyperspace it builds. One fork holds the iPad
 # game's Hyperspace for every port (Android, Linux, Switch).
 # REF is pinned to a commit so a build always gets the same Hyperspace; move it on
-# deliberately. HS_REPO and HS_REF pick another clone, branch or commit.
+# deliberately. HS_REPO and HS_REF pick another clone, branch or commit (a commit
+# by its full hash: git fetches no abbreviated ones).
 REPO=${HS_REPO:-https://github.com/The-Dumb-Dino/FTL-Hyperspace-Dino.git}
 REF=${HS_REF:-59bd00458c606086321568532f0c4b5e817d802a}  # branch iOS-binary-ports
 

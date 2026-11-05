@@ -93,7 +93,7 @@ final class Updater {
     }
 
     private static void offer(GameActivity a, Release r, String mine) {
-        if (a.isFinishing()) return;
+        if (a.isFinishing() || a.isDestroyed()) return;
         SharedPreferences prefs = a.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
         a.showDialog(new AlertDialog.Builder(a)
                 .setTitle(R.string.update_title)
@@ -288,8 +288,17 @@ final class Updater {
             }
             IntentFilter filter = new IntentFilter(ACTION_INSTALL);
             BroadcastReceiver receiver = new BroadcastReceiver() {
+                private boolean finished;
+
                 @Override
                 public void onReceive(Context ctx, Intent i) {
+                    // The installer can report the same result twice
+                    if (finished) return;
+                    if (i.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+                            != PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                        finished = true;
+                        app.unregisterReceiver(this);
+                    }
                     onInstallStatus(a, i);
                 }
             };
@@ -321,7 +330,7 @@ final class Updater {
     }
 
     private static void failed(GameActivity a, String why) {
-        if (a.isFinishing()) return;
+        if (a.isFinishing() || a.isDestroyed()) return;
         a.showDialog(new AlertDialog.Builder(a)
                 .setTitle(R.string.update_failed_title)
                 .setMessage(a.getString(R.string.update_failed_body, why))
