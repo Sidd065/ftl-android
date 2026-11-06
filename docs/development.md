@@ -79,6 +79,16 @@ it as `libftlman.so`. When the player applies mods, the app runs
 and swaps the result in; if anything fails, nothing changes. ftlman is
 GPL-2.0 (see `ftlman/LICENSE`), and each release has its source attached.
 
+The app keeps a copy of each mod in `files/mods`, listed in order in
+`files/mods/list.json`. A copy comes from a file the player added or opened
+with FTL, or from the mods folder: a folder the player picked
+(`ACTION_OPEN_DOCUMENT_TREE`, kept with a persisted read permission). Each time
+the Mods screen opens, and before applying, `Mods.syncFolder` lists the
+folder's `.ftl` and `.zip` files and copies in the new ones and the ones whose
+size or modification time changed. Mods whose files are gone leave the list,
+and a file that isn't a mod stays in it with the reason. A copy replaced since
+mods were last applied is marked, so the screen offers to apply again.
+
 The iPad build needs some help with what mods add:
 
 - It was built without its PNG reader, since its own art is all `.tex`

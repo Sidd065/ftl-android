@@ -341,7 +341,7 @@ final class Importer {
         return null;
     }
 
-    private static long querySize(ContentResolver cr, Uri uri) {
+    static long querySize(ContentResolver cr, Uri uri) {
         try (Cursor c = cr.query(uri, new String[] {android.provider.OpenableColumns.SIZE}, null, null, null)) {
             if (c != null && c.moveToFirst() && !c.isNull(0)) return c.getLong(0);
         } catch (Exception ignored) {

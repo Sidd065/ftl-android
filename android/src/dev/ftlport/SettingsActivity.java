@@ -44,6 +44,7 @@ public class SettingsActivity extends Activity {
     static final String K_PAD_RUMBLE = "pad_rumble";        // boolean
     static final String K_PAD_TOUCHPAD = "pad_touchpad";    // boolean: DualSense / DualShock touchpad moves it
     static final String K_OTHER_BUILD = "other_build_noted"; // String: the other build the player was told about
+    static final String K_MODS_FOLDER = "mods_folder";       // String: the mods folder's document tree, if one was chosen
 
     private static final int REQ_EXPORT = 1, REQ_IMPORT = 2, REQ_LOGS = 3;
 

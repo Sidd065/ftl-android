@@ -86,6 +86,23 @@ Mods made for FTL 1.6 on PC work, installed with
 in your phone's browser, tap the file and open it with FTL, then tap **Apply
 and restart**.
 
+FTL keeps its own copy of each mod, so changing a mod's file afterwards does
+nothing until you add it again (it replaces the copy with the same name). The
+Mods screen shows when each copy was added or last updated.
+
+You can also keep your mods in a folder, as with ftlman on PC: choose it under
+**Mods folder** on the Mods screen. FTL lists the `.ftl` and `.zip` files in
+it, and each time the Mods screen opens it copies again the ones that changed,
+so after editing a mod you just tap **Apply and restart**. Newer versions of
+Android don't let apps use the Download folder itself or the top of the
+phone's storage, so make a folder inside one, like `Download/FTL Mods`.
+
+If you make mods: the iPad game draws a few screens with its own pictures, in
+`img/ipad/`. Its hangar background is `img/ipad/customizeUI/custom_background.png`
+(1376×768), not `img/customizeUI/custom_background.png`, and without Hyperspace
+its title screen is `img/ipad/main_menus/main_base2.png`. A mod that changes
+these screens needs those files too; FTL on PC doesn't use them.
+
 These were tested in an emulator: each one installs and starts a run.
 
 | Mod | What it does |
