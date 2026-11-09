@@ -101,7 +101,9 @@ If you make mods: the iPad game draws a few screens with its own pictures, in
 `img/ipad/`. Its hangar background is `img/ipad/customizeUI/custom_background.png`
 (1376×768), not `img/customizeUI/custom_background.png`, and without Hyperspace
 its title screen is `img/ipad/main_menus/main_base2.png`. A mod that changes
-these screens needs those files too; FTL on PC doesn't use them.
+these screens needs those files too; FTL on PC doesn't use them. With
+Hyperspace, a mod's PC hangar background is shown, stretched to fit, when the
+mod has no iPad one.
 
 These were tested in an emulator: each one installs and starts a run.
 
@@ -173,8 +175,10 @@ Load orders, top to bottom:
 Mods that use the right mouse button get it from a gesture: hold a finger still
 on what you want to click, then tap anywhere with another finger. To drag, such
 as Fusion's augment boxes or Insurrection+'s enemy evasion display, keep the
-second finger down while you move the first, then lift it. Without such a mod,
-the second finger pinches or pauses as usual.
+second finger down while you move the first, then lift it. Hyperspace's crew
+list works the same way: drag a crew box like this to move that crew member up
+or down the list. Where nothing uses the right button, the second finger
+pinches or pauses as usual.
 
 ## Known gaps
 

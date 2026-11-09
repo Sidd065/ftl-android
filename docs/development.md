@@ -97,6 +97,9 @@ The iPad build needs some help with what mods add:
   texture when a mod added a PNG of the same name.
 - It packs small images into atlases. The app writes the atlas lists without
   the images mods replaced into a small overlay that the reader serves instead.
+- It draws space backgrounds at their own size, which fits its own art
+  (1376x768). PC backgrounds (1280x720) are scaled to cover the screen;
+  Hyperspace does that itself when it runs.
 
 ftlman reads mod text files as UTF-8, while Slipstream also accepts Windows-1252,
 which some older mods were saved in. The app converts such files to UTF-8
@@ -123,9 +126,9 @@ is mapped, linked and protected, before any game code runs, and calls its
 `hs_android_init` with where the game is (`hyperspace_host.h`, shared with
 Hyperspace). Its logs (zhl.log, FTL_HS.log) go to the log folder with the
 session logs. If it fails to start, the app says why and doesn't start the
-game. For mods' right clicks, `ux.c` asks it whether a script listens for the
-right button (`hs_android_wants_right_click`) and, if so, sends it the gesture
-(one finger held, a tap with another) and a mouse's right button
+game. For right clicks, `ux.c` asks it whether one would do something where the
+finger or cursor is (`hs_android_wants_right_click_at`) and, if so, sends it the
+gesture (one finger held, a tap with another) and a mouse's right button
 (`hs_android_right_button`).
 
 ## Releases and the updater
