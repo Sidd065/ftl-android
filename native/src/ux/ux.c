@@ -294,6 +294,12 @@ static rectd target_view(void) {
     pthread_mutex_unlock(&g_view_lock);
     return v;
 }
+static bool view_settled(void) {
+    pthread_mutex_lock(&g_view_lock);
+    bool done = g_anim_dur <= 0 || now_s() - g_anim_t0 >= g_anim_dur;
+    pthread_mutex_unlock(&g_view_lock);
+    return done;
+}
 void ux_target_view(double v[4]) {
     rectd r = target_view();
     v[0] = r.x0, v[1] = r.y0, v[2] = r.x1, v[3] = r.y1;
@@ -303,6 +309,7 @@ void ux_reset_zoom(bool animate) { set_view(full_view(), animate ? 0.18 : 0); }
 // Zoomed in on a window (see autozoom_tick)
 static struct {
     bool active, player_moved;
+    bool returning;       // going back to the view before: the minimap waits until it's there
     rectd before;         // the view to go back to
     double closed_since;  // the window has been shut since (0: it's open)
 } g_az;
@@ -826,6 +833,10 @@ static bool window_rect(uint8_t *gui, rectd *r, bool *top) {
 // player wants. The view goes back once the window closes, unless the player
 // moved it in between.
 static void autozoom_tick(void) {
+    if (g_az.returning && view_settled()) {
+        g_az.returning = false;
+        overlay_minimap_hide(false);
+    }
     uint8_t *a = capp();
     uint8_t *gui = a && !a[CAPP_MENU] && !a[CAPP_STARTUP] ? *(uint8_t **)(a + CAPP_GUI) : NULL;
     bool want_windows = g_window_zoom == 1 || (g_window_zoom == 0 && g_mag_auto);
@@ -858,6 +869,7 @@ static void autozoom_tick(void) {
         }
         set_view(v, 0.25);
         overlay_minimap_hide(true);
+        g_az.returning = false;
         return;
     }
     if (!g_az.active) return;
@@ -868,7 +880,7 @@ static void autozoom_tick(void) {
     if (!g_az.player_moved) set_view(g_az.before, 0.25);
     g_az.active = g_az.player_moved = false;
     g_az.closed_since = 0;
-    overlay_minimap_hide(false);
+    g_az.returning = true;
 }
 
 // Android often ends the app while it's in the background, which on iOS was
