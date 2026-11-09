@@ -459,16 +459,18 @@ static void gesture_end(void) {
     g_ga = g_gb = -1;
 }
 
-// Right clicks for mods (Hyperspace's scripts; the game itself has no use for them on the
-// iPad layout): a finger held still, then a tap with another, clicks where the held finger
-// is. Keeping the second finger down while moving the first drags. Only while a script
-// listens for the right button; otherwise the second finger pinches or pauses as usual.
+// Right clicks for Hyperspace (mods' scripts, dragging crew boxes): a finger held still,
+// then a tap with another, clicks where the held finger is. Keeping the second finger down
+// while moving the first drags. Only where Hyperspace says a right click does something;
+// otherwise the second finger pinches or pauses as usual.
 #define RIGHT_HOLD_S 0.25  // held at least this long; two-finger taps land closer together
 
 static bool right_click_wanted(int held, double t) {
     ptr_t *p = &P[held];
-    return p->to_game && t - p->t0 >= RIGHT_HOLD_S && hypot(p->sx - p->x0, p->sy - p->y0) < g_dpi / 6.0 &&
-           hyperspace_wants_right_click();
+    if (!p->to_game || t - p->t0 < RIGHT_HOLD_S || hypot(p->sx - p->x0, p->sy - p->y0) >= g_dpi / 6.0) return false;
+    double gx, gy;
+    surface_to_game(p->sx, p->sy, &gx, &gy);
+    return hyperspace_wants_right_click(gx, gy);
 }
 static void right_button(int action) {
     double gx, gy;
@@ -704,14 +706,17 @@ void ux_handle_mouse(int action, float sx, float sy, float wheel) {
         break;
     case 1: synth_touch(TOUCH_BEGAN, sx, sy); break;
     case 2: synth_touch(TOUCH_ENDED, sx, sy); break;
-    case 3:  // right button: a right click for mods that listen for one, otherwise close / back
-        if (hyperspace_wants_right_click()) {
+    case 3: {  // right button: a right click where it does something, otherwise close / back
+        double gx, gy;
+        surface_to_game(sx, sy, &gx, &gy);
+        if (hyperspace_wants_right_click(gx, gy)) {
             g_mouse_right = true;
             mouse_right(HS_RIGHT_BUTTON_DOWN, sx, sy);
         } else {
             ux_handle_back();
         }
         break;
+    }
     case 4:
         if (g_mouse_right) mouse_right(HS_RIGHT_BUTTON_UP, sx, sy);
         g_mouse_right = false;

@@ -9,7 +9,7 @@ struct mo_image;
 int hyperspace_start(const char *lib, const char *log_dir, const char *data_dir, struct mo_image *img, char *err,
                      size_t errsize);
 
-// Right clicks for mods' scripts (see hyperspace_host.h). Off when Hyperspace isn't
-// running or no script listens for the right button. x and y in game pixels, as touches.
-bool hyperspace_wants_right_click(void);
+// Whether a right click at x, y would do something (see hyperspace_host.h). Off when
+// Hyperspace isn't running. x and y in game pixels, as touches.
+bool hyperspace_wants_right_click(double x, double y);
 void hyperspace_right_button(int action, double x, double y);

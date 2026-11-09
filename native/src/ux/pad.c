@@ -163,6 +163,11 @@ static void right_button(int action) {
     hud_to_game(g_pad.x, g_pad.y, &gx, &gy);
     hyperspace_right_button(action, gx, gy);
 }
+static bool right_click_wanted(void) {
+    double gx, gy;
+    hud_to_game(g_pad.x, g_pad.y, &gx, &gy);
+    return hyperspace_wants_right_click(gx, gy);
+}
 
 // Move the cursor, keeping it on screen; pushed past the edge of a zoomed view, it pans
 // (when the player is pushing it)
@@ -243,7 +248,7 @@ static void action(int act, bool down) {
         finger(down ? TOUCH_BEGAN : TOUCH_ENDED);
         break;
     case ACT_RIGHT_CLICK:
-        if (down && !g_pad.right && hyperspace_wants_right_click()) {
+        if (down && !g_pad.right && right_click_wanted()) {
             cursor_show();
             g_pad.right = true;
             right_button(HS_RIGHT_BUTTON_DOWN);
@@ -394,7 +399,7 @@ static struct {
 } g_tp;
 
 static int touchpad_click_kind(int fingers) {
-    return fingers >= 2 && hyperspace_wants_right_click() ? ACT_RIGHT_CLICK : ACT_TAP;
+    return fingers >= 2 && right_click_wanted() ? ACT_RIGHT_CLICK : ACT_TAP;
 }
 
 void ux_pad_trackpad(int fingers, float x, float y, bool pressed) {
