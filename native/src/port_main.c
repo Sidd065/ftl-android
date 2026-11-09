@@ -49,6 +49,8 @@ int __ftl_find_macho_unwind(uintptr_t pc, uintptr_t *mh, uintptr_t *textlen, uin
 
 static const char *g_mods_index;
 const char *port_mods_index(void) { return g_mods_index; }
+static bool g_hyperspace;
+bool port_hyperspace(void) { return g_hyperspace; }
 
 mo_image *port_image(void) { return &g_img; }
 uintptr_t port_image_slide(void) { return (uintptr_t)g_img.slide; }
@@ -61,6 +63,7 @@ int port_run_game(const port_config *cfg) {
     mkdir(g_cache_path, 0755);
     port_verbose = cfg->verbose;
     g_mods_index = cfg->mods_index;
+    g_hyperspace = cfg->hyperspace != NULL;
     if (cfg->hw_machine) darwin_set_hw_machine(cfg->hw_machine);
 
     darwin_libsystem_init();

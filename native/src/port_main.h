@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -21,5 +22,7 @@ struct mo_image;
 struct mo_image *port_image(void);
 uintptr_t port_image_slide(void);
 const char *port_mods_index(void);
+// Whether Hyperspace is loaded with the game.
+bool port_hyperspace(void);
 void port_install_crash_handler(void);
 void port_backtrace_from(uintptr_t pc, uintptr_t lr, uintptr_t fp, const char *why);

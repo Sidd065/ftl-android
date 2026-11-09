@@ -13,6 +13,7 @@
 // "offset, size, length, added, path" lines.
 #include "mods.h"
 
+#include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -21,8 +22,10 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+#include "../fw/fw.h"
 #include "../loader/macho.h"
 #include "../patches.h"
+#include "../port_main.h"
 #include "port_log.h"
 
 // SIL's package module for ftl.dat (FTL iOS 1.6.21)
@@ -164,6 +167,41 @@ static int load_index(const char *idx_path) {
     return 0;
 }
 
+// Space backgrounds that aren't iPad art (1376x768, or a square texture) are scaled to cover
+// the screen. Hyperspace does the same in the games it runs.
+#define G_RENDER_BACKGROUND 0x100110f9cull  // void (ResourceControl *, GL_Texture *, int x, y, rotation, GL_Color, float opacity, bool mirror)
+#define G_BLIT_PIXEL_IMAGE 0x100120b4cull   // bool (GL_Texture *, float x, y, w, h, rotation, GL_Color, bool mirror, bool background)
+
+typedef struct { float r, g, b, a; } gl_color;
+static bool (*g_blit_pixel_image)(void *tex, float x, float y, float w, float h, float rotation, gl_color color, bool mirror,
+                                  bool background);
+
+static void render_background_hook(void *resources, void *tex, int x, int y, int rotation, gl_color color, float opacity,
+                                   bool mirror) {
+    (void)resources;
+    if (!tex) return;
+    float w = *(int *)((uint8_t *)tex + 4), h = *(int *)((uint8_t *)tex + 8), left = x, top = y;
+    if (w > 0 && h > 0 && w != h && !(w == 1376 && h == 768) && g_display.render_h > 0) {
+        float screen_w = 768.0f * g_display.render_w / g_display.render_h, scale = fmaxf(screen_w / w, 768.0f / h);
+        left = 688 - w * scale / 2 + x * scale;
+        top = 384 - h * scale / 2 + y * scale;
+        w *= scale;
+        h *= scale;
+    }
+    color.a = opacity;
+    g_blit_pixel_image(tex, left, top, w, h, (float)rotation, color, mirror, true);
+}
+
+static void backgrounds_install(mo_image *img) {
+    const uint32_t *rb = mo_ptr(img, G_RENDER_BACKGROUND), *bp = mo_ptr(img, G_BLIT_PIXEL_IMAGE);
+    if (rb[0] != 0xB4000361u || bp[0] != 0xD10083FFu) {
+        LOGW("mods: unexpected code in the background drawing; PC backgrounds keep their size");
+        return;
+    }
+    g_blit_pixel_image = mo_ptr(img, G_BLIT_PIXEL_IMAGE);
+    patch_hook(img, G_RENDER_BACKGROUND, (void *)render_background_hook, 0);
+}
+
 int mods_install(mo_image *img, const char *index_path) {
     if (!index_path || !*index_path) return 0;
     size_t n = strlen(index_path);
@@ -184,6 +222,7 @@ int mods_install(mo_image *img, const char *index_path) {
     if (!g_file_info) return -1;
     patch_hook(img, G_PKG_LIST_START, (void *)list_start_hook, 0);
     patch_hook(img, G_PKG_LIST_NEXT, (void *)list_next_hook, 0);
+    if (!port_hyperspace()) backgrounds_install(img);
     LOGI("mods: on (%d adjusted atlas files)", g_nov);
     return 0;
 }
