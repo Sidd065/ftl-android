@@ -27,3 +27,5 @@ int targets_install(struct mo_image *img);
 int targets_get(ux_target *out, int max);
 // Called on the game's thread at the start of each frame, with the CApp.
 void targets_set_frame_fn(void (*fn)(void *app));
+// Whether the last frame showed the credits after a win.
+bool targets_credits_shown(void);

@@ -24,6 +24,7 @@ static ux_target g_build[MAX_TARGETS], g_state[MAX_TARGETS], g_pub[MAX_TARGETS];
 static int g_nbuild, g_nstate, g_npub;
 static int g_barrier = -1;  // where the top window began drawing this frame
 static int g_window_depth;  // windows being drawn, one inside the other
+static bool g_credits_drawn, g_credits_shown;  // the credits after a win: this frame, the last one
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static void (*g_frame_fn)(void *app);
 static void (*g_capp_render)(void *app);
@@ -196,6 +197,8 @@ static void capp_render_hook(void *app) {
     g_nbuild = g_nstate = 0;
     g_barrier = -1;
     g_window_depth = 0;
+    g_credits_shown = g_credits_drawn;
+    g_credits_drawn = false;
     double k = g_display.render_h / 768.0;
     g_hud_left = k > 0 ? (float)((g_display.render_w / k - 1024) / 2) : 0;
     g_app = app;
@@ -222,7 +225,12 @@ WINDOW_HOOK(starmap)
 WINDOW_HOOK(store)
 WINDOW_HOOK(tabbed)
 WINDOW_HOOK(input)
-WINDOW_HOOK(gameover)
+WINDOW_HOOK(gameover_window)
+
+static void gameover_render_hook(void *w) {
+    if (((const uint8_t *)w)[8] && ((const uint8_t *)w)[GAMEOVER_CREDITS]) g_credits_drawn = true;
+    gameover_window_render_hook(w);
+}
 
 static const struct {
     uint64_t addr;
@@ -238,7 +246,7 @@ static const struct {
     {G_STORE_ONRENDER, (void *)store_render_hook, &g_store_render},
     {G_TABBED_ONRENDER, (void *)tabbed_render_hook, &g_tabbed_render},
     {G_INPUTBOX_ONRENDER, (void *)input_render_hook, &g_input_render},
-    {G_GAMEOVER_ONRENDER, (void *)gameover_render_hook, &g_gameover_render},
+    {G_GAMEOVER_ONRENDER, (void *)gameover_render_hook, &g_gameover_window_render},
 };
 
 static void (*g_ship_render)(void *ship_manager, bool interior, bool doors);
@@ -256,6 +264,8 @@ int targets_get(ux_target *out, int max) {
 }
 
 void targets_set_frame_fn(void (*fn)(void *app)) { g_frame_fn = fn; }
+
+bool targets_credits_shown(void) { return g_credits_shown; }
 
 int targets_install(mo_image *img) {
     g_matrix = mo_ptr(img, G_CSURFACE_MATRIX);

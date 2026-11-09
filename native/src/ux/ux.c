@@ -203,6 +203,12 @@ static bool at_top_menu(void) {
         if (a[CAPP_MENU + subscreens[i]]) return false;
     return true;
 }
+// The credits: from the menu, or after a win. Holding a finger skips them, so no magnifier.
+static bool credits_showing(void) {
+    uint8_t *a = capp();
+    if (a && a[CAPP_MENU] && a[CAPP_MENU + MENU_CREDITS]) return true;
+    return targets_credits_shown();
+}
 // Toggle pause like the desktop hotkey. Returns the new state (-1: not in game).
 int ux_toggle_pause(void) {
     uint8_t *a = capp();
@@ -508,7 +514,7 @@ void ux_handle_touch(int phase, long id, float sx, float sy, double t) {
             g_mode = G_SINGLE;
             P[s].to_game = true;
             forward(TOUCH_BEGAN, &P[s], t);
-            overlay_loupe_touch(1, sx, sy);
+            if (!credits_showing()) overlay_loupe_touch(1, sx, sy);
         } else if (g_mode == G_RIGHT) {
             // the first finger still down, the button up: another right click
             if (g_rb < 0 && g_ra >= 0) right_press(g_ra, s, t);

@@ -37,6 +37,8 @@
 #define MENU_SUBSCREEN_OFFSETS {0x26b8, 0x3d00, 0x3fd0, 0x26c8, 0x15f0}
 #define MENU_CONTINUE_ACTIVE 0x80  // MainMenu: the Continue button is active (there's a saved run)
 #define MENU_ITEM 0x450            // MainMenu: int, the button just pressed; CApp acts on it (9: Continue)
+#define MENU_CREDITS 0x3fd0        // MainMenu: bool, the credits are showing
+#define GAMEOVER_CREDITS 0x108     // GameOver: bool, the credits are showing (after a win)
 
 // ---- CommandGui ----
 #define GUI_CREW_CONTROL 0x258   // CrewControl
