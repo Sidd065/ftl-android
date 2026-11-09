@@ -4,7 +4,7 @@
 # deliberately. HS_REPO and HS_REF pick another clone, branch or commit (a commit
 # by its full hash: git fetches no abbreviated ones).
 REPO=${HS_REPO:-https://github.com/Sidd065/FTL-Hyperspace.git}
-REF=${HS_REF:-31b2e718849f585e18dbc8c343669a452c1c6c0b}  # branch fix-enemy-status-box, until iOS-binary-ports has it
+REF=${HS_REF:-2d74b71fd640e95d3ec7bddd7ad6e5a0e0457910}  # branch ipad-player-reports, until iOS-binary-ports has it
 
 # Checks out REF in SRC, fetching only that commit
 hs_checkout() {
